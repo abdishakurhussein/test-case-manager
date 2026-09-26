@@ -482,3 +482,6 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Local database files and SQLite sidecar files.
+/src/TestCaseManager.Api/App_Data/
