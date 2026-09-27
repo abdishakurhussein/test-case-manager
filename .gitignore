@@ -485,3 +485,8 @@ $RECYCLE.BIN/
 
 # Local database files and SQLite sidecar files.
 /src/TestCaseManager.Api/App_Data/
+
+# Isolated browser-test data and reports (not the application's database).
+/src/testcase-manager-web/.e2e-data/
+/src/testcase-manager-web/test-results/
+/src/testcase-manager-web/playwright-report/

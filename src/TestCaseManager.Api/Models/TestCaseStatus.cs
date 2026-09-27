@@ -5,11 +5,13 @@ using System.Threading.Tasks;
 
 namespace TestCaseManager.Api.Models
 {
-    // Describes preparation, not whether an execution passed.
+    // Describes the test case workflow, not whether an execution passed.
 public enum TestCaseStatus
     {
         Draft = 0,
         Ready = 1,
-        Archived = 2
+        Archived = 2,
+        // Keep the existing numeric values stable for databases already in use.
+        Complete = 3
     }
 }

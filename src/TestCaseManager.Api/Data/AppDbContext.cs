@@ -25,6 +25,8 @@ namespace TestCaseManager.Api.Data
         public DbSet<Module> Modules => Set<Module>();
         public DbSet<TestCase> TestCases => Set<TestCase>();
         public DbSet<TestStep> TestSteps => Set<TestStep>();
+        public DbSet<ManualRun> ManualRuns => Set<ManualRun>();
+        public DbSet<ManualStepResult> ManualStepResults => Set<ManualStepResult>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -59,6 +61,18 @@ namespace TestCaseManager.Api.Data
             // Step numbering must start at 1 or higher
             modelBuilder.Entity<TestStep>()
             .ToTable("TestSteps", table => table.HasCheckConstraint("CK_TestSteps_Position", "\"Position\" >= 1"));
+
+            modelBuilder.Entity<ManualRun>()
+                .HasOne(run => run.TestCase)
+                .WithMany()
+                .HasForeignKey(run => run.TestCaseId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ManualStepResult>()
+                .HasOne(result => result.ManualRun)
+                .WithMany(run => run.Steps)
+                .HasForeignKey(result => result.ManualRunId)
+                .OnDelete(DeleteBehavior.Cascade);
         }
 
         public override int SaveChanges(bool acceptAllChangesOnSuccess)

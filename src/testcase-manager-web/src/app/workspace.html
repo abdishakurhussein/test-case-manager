@@ -1,0 +1,317 @@
+<header class="page-heading">
+  <div>
+    <p class="eyebrow">MANUAL TEST MANAGEMENT</p>
+    <h1>{{ selectedProject()?.name || 'Your test workspace' }}</h1>
+    <p class="muted">{{ selectedProjectId() ? 'Manage this project’s modules and test cases.' : 'Organise projects, write test cases, and keep your knowledge in one place.' }}</p>
+  </div>
+  @if (!selectedProjectId()) {
+    <button class="primary" (click)="open('project')">+ New project</button>
+  } @else if (selectedProject(); as project) {
+    <button type="button" class="danger" [disabled]="project.moduleCount > 0 || deletingKind() !== null"
+      (click)="deleteProject(project)">
+      {{ deletingKind() === 'project' && deletingId() === project.id ? 'Deleting…' : 'Delete project' }}
+    </button>
+  }
+</header>
+@if (notice()) {
+  <p class="notice" role="status">{{ notice() }}</p>
+}
+@if (error()) {
+  <div class="error" role="alert">
+    {{ error() }} <button (click)="reload()">Retry workspace</button>
+  </div>
+}
+@if (loading()) {
+  <p role="status">Loading your workspace…</p>
+} @else {
+  @if (!selectedProjectId()) {
+    <section class="panel" aria-labelledby="projects-heading">
+      <div class="section-heading">
+        <h2 id="projects-heading">Recently opened projects</h2>
+      </div>
+      @if (!projects().length) {
+        <div class="empty">
+          <h3>A fresh start for your test cases</h3>
+          <p>Create your first project to get started.</p>
+          <button class="primary" (click)="open('project')">Create your first project</button>
+        </div>
+      } @else if (!recentProjects().length) {
+        <p class="muted">No projects opened recently. Choose one from the sidebar.</p>
+      } @else {
+        <div class="project-grid">
+          @for (project of recentProjects(); track project.id) {
+            <a class="project-card" [routerLink]="projectPath(project)">
+              <span class="folder" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3V7Z" />
+                </svg>
+              </span>
+              <strong>{{ project.name }}</strong>
+              <span class="muted">{{ project.moduleCount }} modules · {{ project.testCaseCount }} test cases</span>
+              <span class="link-text">Open project →</span>
+            </a>
+          }
+        </div>
+      }
+    </section>
+  }
+  @if (selectedProject(); as project) {
+    <section class="panel" aria-labelledby="modules-heading">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">{{ project.name }}</p>
+          <h2 id="modules-heading">Modules</h2>
+        </div>
+        <button class="primary" type="button" (click)="open('module')">+ New module</button>
+      </div>
+      @if (moduleLoading()) {
+        <p role="status">Loading modules…</p>
+      } @else if (!modules().length) {
+        <p class="muted">No modules yet. Add one to organise this project's test cases.</p>
+      } @else {
+        <div class="module-list">
+          @for (module of modules(); track module.id) {
+            <div class="module-row">
+              <div>
+                <strong>{{ module.name }}</strong
+                ><small>{{ module.testCaseCount }} test cases</small>
+              </div>
+
+              <button
+                  type="button"
+                  class="danger"
+                  [disabled]="module.testCaseCount > 0 || deletingKind() !== null"
+                  (click)="deleteModule(module)">
+                  {{
+                    deletingKind() === 'module' && deletingId() === module.id
+                      ? 'Deleting…'
+                      : 'Delete Module'
+                  }}
+                </button>
+            </div>
+          }
+        </div>
+      }
+    </section>
+  }
+  <section class="panel" aria-labelledby="cases-heading">
+    <div class="section-heading">
+      <div>
+        <h2 id="cases-heading">
+          {{ selectedProjectId() ? 'Project test cases' : 'Recent test cases' }}
+        </h2>
+        <p class="muted">Open a case to read its instructions and expected results.</p>
+      </div>
+      <button
+        class="primary"
+        [disabled]="!selectedProjectId() || !modules().length || moduleLoading()"
+        (click)="open('case')"
+      >
+        + New test case
+      </button>
+    </div>
+    @if (!selectedProjectId()) {
+      <p class="hint">Select a project above to add modules and test cases.</p>
+    }
+    @if (!visibleCases().length) {
+      <div class="empty">
+        <h3>No test cases yet</h3>
+        <p>Your saved cases will appear here.</p>
+      </div>
+    } @else {
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Test case</th>
+              <th>Project / Module</th>
+              <th>Status</th>
+              <th>Updated</th>
+              @if (selectedProjectId()) { <th>Open</th> }
+            </tr>
+          </thead>
+          <tbody>
+            @for (item of visibleCases(); track item.id) {
+              <tr>
+                <td>TC-{{ item.id.toString().padStart(3, '0') }}</td>
+                <td>
+                  <a [routerLink]="casePath(item)">{{ item.title }}</a>
+                </td>
+                <td>
+                  {{ item.projectName }}<small>{{ item.moduleName }}</small>
+                </td>
+                <td>
+                  <span class="badge" [class.ready]="item.status === 'Ready'" [class.complete]="item.status === 'Complete'">{{
+                    item.status
+                  }}</span>
+                </td>
+                <td>{{ item.updatedAt | date: 'mediumDate' }}</td>
+                @if (selectedProjectId()) {
+                  <td>
+                    <a class="icon-action icon-edit" [routerLink]="casePath(item)"
+                      [attr.aria-label]="'Open test case ' + item.title" title="Open test case">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M12 20h9M4 16l11-11 4 4-11 11-5 1 1-5Zm9-9 4 4" />
+                      </svg>
+                    </a>
+                  </td>
+                }
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </section>
+}
+<dialog #editor (cancel)="cancel($event)" aria-labelledby="editor-heading">
+  <div class="dialog-heading">
+    <div>
+      <p class="eyebrow">{{ mode() === 'project' ? 'YOUR WORKSPACE' : selectedProject()?.name }}</p>
+      <h2 id="editor-heading">
+        {{
+          mode() === 'project'
+            ? 'Create project'
+            : mode() === 'module'
+              ? 'Create module'
+              : 'Create test case'
+        }}
+      </h2>
+    </div>
+    <button type="button" aria-label="Close form" [disabled]="saving()" (click)="close()">✕</button>
+  </div>
+  @if (formError()) {
+    <p class="error" role="alert">{{ formError() }}</p>
+  }
+  @if (mode() !== 'case') {
+    <form [formGroup]="nameForm" (ngSubmit)="save()">
+      <fieldset [disabled]="saving()">
+        <label
+          >Name <span class="required">*</span
+          ><input autofocus formControlName="name" maxlength="120" required /></label
+        ><small class="hint">Up to 120 characters.</small
+        ><label
+          >Description<textarea formControlName="description" maxlength="2000" rows="3"></textarea>
+        </label>
+        <div class="form-actions">
+          <button type="button" (click)="close()">Cancel</button
+          ><button class="primary" type="submit">
+            {{ saving() ? 'Saving…' : 'Save ' + mode() }}
+          </button>
+        </div>
+      </fieldset>
+    </form>
+  } @else {
+    <form [formGroup]="caseForm" (ngSubmit)="save()">
+      <fieldset [disabled]="saving()">
+        <label
+          >Title <span class="required">*</span
+          ><input autofocus formControlName="title" maxlength="200" required /></label
+        ><small class="hint">Up to 200 characters.</small>
+        <div class="form-grid">
+          <label
+            >Module <span class="required">*</span
+            ><select formControlName="moduleId">
+              @for (module of modules(); track module.id) {
+                <option [ngValue]="module.id">{{ module.name }}</option>
+              }
+            </select></label
+          ><label
+            >Priority<select formControlName="priority">
+              <option>Trivial</option>
+              <option>Minor</option>
+              <option>Major</option>
+              <option>Critical</option>
+            </select></label
+          ><label
+            >Status<select formControlName="status">
+              <option>Draft</option>
+              <option>Ready</option>
+            </select></label
+          >
+        </div>
+        <label
+          >Description<textarea
+            formControlName="description"
+            maxlength="4000"
+            rows="2"
+          ></textarea></label
+        ><label
+          >Preconditions<textarea
+            formControlName="preconditions"
+            maxlength="4000"
+            rows="2"
+          ></textarea></label
+        ><small class="hint">Description and preconditions: up to 4,000 characters each.</small>
+        <div class="section-heading">
+          <h3>Test steps</h3>
+          <span class="hint">{{ steps.length }} / 100</span>
+        </div>
+        <div formArrayName="steps">
+          @for (step of steps.controls; track step; let i = $index) {
+            <section class="step-editor" [formGroupName]="i">
+              <div class="section-heading">
+                <strong>Step {{ i + 1 }}</strong>
+                <div class="step-actions">
+                  <button
+                    type="button"
+                    [attr.aria-label]="'Move step ' + (i + 1) + ' up'"
+                    [disabled]="i === 0"
+                    (click)="moveStep(i, -1)"
+                  >
+                    ↑</button
+                  ><button
+                    type="button"
+                    [attr.aria-label]="'Move step ' + (i + 1) + ' down'"
+                    [disabled]="i === steps.length - 1"
+                    (click)="moveStep(i, 1)"
+                  >
+                    ↓</button
+                  ><button
+                    type="button"
+                    [attr.aria-label]="'Remove step ' + (i + 1)"
+                    [disabled]="steps.length === 1"
+                    (click)="removeStep(i)"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+              <label
+                >Action <span class="required">*</span
+                ><textarea
+                  formControlName="action"
+                  maxlength="2000"
+                  rows="2"
+                  required
+                ></textarea></label
+              ><label
+                >Expected result <span class="required">*</span
+                ><textarea
+                  formControlName="expectedResult"
+                  maxlength="2000"
+                  rows="2"
+                  required
+                ></textarea>
+              </label>
+            </section>
+          }
+        </div>
+        <button type="button" [disabled]="steps.length >= 100" (click)="addStep()">
+          + Add step
+        </button>
+        <p class="hint">
+          Each action and expected result supports up to 2,000 characters. At least one complete
+          step is required.
+        </p>
+        <div class="form-actions">
+          <button type="button" (click)="close()">Cancel</button
+          ><button class="primary" type="submit">
+            {{ saving() ? 'Saving…' : 'Save test case' }}
+          </button>
+        </div>
+      </fieldset>
+    </form>
+  }
+</dialog>

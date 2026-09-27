@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using TestCaseManager.Api.Data;
 
@@ -10,9 +11,11 @@ using TestCaseManager.Api.Data;
 namespace TestCaseManager.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260927210549_ManualRuns")]
+    partial class ManualRuns
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.12");
@@ -50,20 +53,11 @@ namespace TestCaseManager.Api.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("ActualResult")
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool?>("CanReplicate")
-                        .HasColumnType("INTEGER");
-
                     b.Property<string>("ExpectedResult")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<int>("ManualRunId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool?>("OnlyUserAffected")
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("OriginalStepId")
