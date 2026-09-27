@@ -1,4 +1,4 @@
-# TestCaseManager
+# Test Case Manager
 
 A local-only manual test-case library built with Angular 21, ASP.NET Core 10 and SQLite.
 
