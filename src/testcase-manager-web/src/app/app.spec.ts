@@ -1,23 +1,18 @@
 import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { App } from './app';
+import { ApiService } from './api.service';
+import { of } from 'rxjs';
 
-describe('App', () => {
-  beforeEach(async () => {
+describe('App shell', () => {
+  it('shows the local workspace and navigation', async () => {
     await TestBed.configureTestingModule({
       imports: [App],
+      providers: [provideRouter([]), { provide: ApiService, useValue: { projects: () => of([]) } }],
     }).compileComponents();
-  });
-
-  it('should create the app', () => {
     const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance;
-    expect(app).toBeTruthy();
-  });
-
-  it('should render title', async () => {
-    const fixture = TestBed.createComponent(App);
-    await fixture.whenStable();
-    const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelector('h1')?.textContent).toContain('Hello, testcase-manager-web');
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('TestCaseManager');
+    expect(fixture.nativeElement.textContent).toContain('Local workspace');
   });
 });

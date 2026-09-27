@@ -1,0 +1,194 @@
+@if (loading()) {
+  <p role="status">Loading test case…</p>
+}
+@if (error()) {
+  <p role="alert" class="error">{{ error() }}</p>
+}
+@if (item(); as item) {
+  <a [routerLink]="projectPath({ id: item.projectId, name: item.projectName })" class="back-link">
+    ← Back to {{ item.projectName }}
+  </a>
+
+  <header class="page-heading case-heading">
+    <div>
+      <p class="eyebrow">{{ item.projectName }} / {{ item.moduleName }}</p>
+      <h1>{{ item.title }}</h1>
+      <p class="muted">TC-{{ item.id.toString().padStart(3, '0') }} · {{ item.priority }} priority</p>
+    </div>
+    <div class="status-actions">
+      <span class="badge" [class.ready]="item.status === 'Ready'" [class.complete]="item.status === 'Complete'">{{ item.status }}</span>
+      @if (item.status === 'Draft') {
+        <button type="button" [disabled]="savingStatus()" (click)="changeStatus('Ready')">
+          {{ savingStatus() ? 'Saving…' : 'Mark ready' }}
+        </button>
+      } @else if (item.status === 'Ready') {
+        <button type="button" [disabled]="savingStatus()" (click)="changeStatus('Draft')">
+          {{ savingStatus() ? 'Saving…' : 'Return to draft' }}
+        </button>
+        <button type="button" class="primary" [disabled]="savingStatus() || runs().length === 0"
+          [attr.title]="runs().length === 0 ? 'Save a manual run before completing this case' : null"
+          (click)="changeStatus('Complete')">
+          {{ savingStatus() ? 'Saving…' : 'Mark complete' }}
+        </button>
+      }
+    </div>
+  </header>
+
+  @if (notice()) { <p class="notice" role="status">{{ notice() }}</p> }
+  @if (statusError()) { <p class="error" role="alert">{{ statusError() }}</p> }
+  @if (item.status === 'Complete') { <p class="hint">This completed test case is view-only. Its saved runs remain available below.</p> }
+
+  <section class="panel">
+    <h2>Case details</h2>
+    <h3>Description</h3>
+    <p class="preserve">{{ item.description || 'No description provided.' }}</p>
+    <h3>Preconditions</h3>
+    <p class="preserve">{{ item.preconditions || 'No preconditions provided.' }}</p>
+    <div class="metadata">
+      <span>Created {{ item.createdAt | date: 'medium' }}</span>
+      <span>Updated {{ item.updatedAt | date: 'medium' }}</span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="section-heading">
+      <div>
+        <h2>Manual test run</h2>
+        <p class="muted">Mark every step Passed or Failed, then save the completed run.</p>
+      </div>
+      <div class="section-actions">
+        <span class="run-progress">{{ markedCount() }} / {{ item.steps.length }} recorded</span>
+        <button type="button" class="primary" [disabled]="item.status === 'Complete' || item.steps.length >= 100 || savingRun() || addingAction()"
+          (click)="openAddAction()">+ Add Actions</button>
+      </div>
+    </div>
+    @for (step of item.steps; track step.id) {
+      <article class="saved-step run-step" [class.step-passed]="decisions()[step.id] === 'Passed'"
+        [class.step-failed]="decisions()[step.id] === 'Failed'">
+        <span class="step-number">{{ step.position }}</span>
+        <div>
+          <div class="step-title-row">
+            <h3>Action</h3>
+            <button type="button" class="icon-action icon-danger"
+              [attr.aria-label]="item.steps.length === 1 ? 'Delete test case by removing last step' : 'Remove step ' + step.position"
+              [attr.title]="item.steps.length === 1 ? 'Delete test case' : 'Remove step ' + step.position + ' from case definition'"
+              [disabled]="item.status === 'Complete' || removingStepId() !== null || savingRun() || deleting()"
+              (click)="removeStep(step.id)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m5 4v7m4-7v7" />
+              </svg>
+            </button>
+          </div>
+          <p class="preserve">{{ step.action }}</p>
+          <h3>Expected result</h3>
+          <p class="preserve">{{ step.expectedResult }}</p>
+          <div class="step-result-controls" role="group" [attr.aria-label]="'Result for step ' + step.position">
+            <label class="step-pass">
+              <input type="checkbox" [checked]="decisions()[step.id] === 'Passed'"
+                [disabled]="item.status === 'Archived' || item.status === 'Complete' || savingRun()"
+                (change)="setDecision(step.id, decisions()[step.id] === 'Passed' ? null : 'Passed')" />
+              ✓ Passed
+            </label>
+            <button type="button" class="step-fail-button"
+              [class.chosen]="decisions()[step.id] === 'Failed'"
+              [attr.aria-pressed]="decisions()[step.id] === 'Failed'"
+              [disabled]="item.status === 'Archived' || item.status === 'Complete' || savingRun()"
+              (click)="openFailure(step.id)">
+              ✕ Failed
+            </button>
+          </div>
+          @if (decisions()[step.id] === 'Failed' && failureDetails()[step.id]; as failure) {
+            <p class="failure-summary">Actual result: {{ failure.actualResult }}</p>
+          }
+        </div>
+      </article>
+    }
+    @if (runError()) { <p class="error" role="alert">{{ runError() }}</p> }
+    <div class="form-actions">
+      <button type="button" class="primary" [disabled]="!canSaveRun()" (click)="saveRun()">
+        {{ savingRun() ? 'Saving…' : 'Save completed run' }}
+      </button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Previous runs</h2>
+    @if (!runs().length) {
+      <p class="muted">No completed runs yet.</p>
+    } @else {
+      @for (run of runs(); track run.id) {
+        <details class="run-history">
+          <summary>
+            <span class="result-pill" [class.failed]="run.result === 'Failed'">{{ run.result }}</span>
+            {{ run.completedAt | date: 'medium' }} · {{ run.steps.length }} steps
+          </summary>
+          <ol>
+            @for (step of run.steps; track step.originalStepId) {
+              <li>
+                <strong>{{ step.outcome }}</strong> — {{ step.action }}
+                @if (step.outcome === 'Failed') {
+                  <div class="failure-history">
+                    <strong>Actual Result</strong>
+                    <p class="preserve">{{ step.actualResult }}</p>
+                    <span>Can this issue be replicated? {{ step.canReplicate === true ? 'Yes' : step.canReplicate === false ? 'No' : 'Not recorded' }}</span><br />
+                    <span>Are you the only user affected? {{ step.onlyUserAffected === true ? 'Yes' : step.onlyUserAffected === false ? 'No' : 'Not recorded' }}</span>
+                  </div>
+                }
+              </li>
+            }
+          </ol>
+        </details>
+      }
+    }
+  </section>
+
+  <section class="panel delete-section">
+    <div>
+      <h2>Delete test case</h2>
+      <p class="muted">Permanently removes its steps and saved run history. Confirmation is required.</p>
+    </div>
+    <button type="button" class="danger" [disabled]="deleting()" (click)="deleteCase()">
+      {{ deleting() ? 'Deleting…' : 'Delete test case' }}
+    </button>
+    @if (deleteError()) { <p class="error" role="alert">{{ deleteError() }}</p> }
+  </section>
+}
+<dialog #failureDialog class="failure-dialog" aria-labelledby="failure-heading" (cancel)="cancelFailure($event)">
+  <h2 id="failure-heading">Actual Result</h2>
+  <p class="muted">Record what happened when this step failed.</p>
+  <label for="actual-result">Actual test result <span class="required">*</span></label>
+  <textarea id="actual-result" rows="5" maxlength="4000" [value]="actualResult()"
+    (input)="actualResult.set($any($event.target).value)"></textarea>
+  <fieldset class="choice-group">
+    <legend>Can this issue be replicated? <span class="required">*</span></legend>
+    <label><input type="radio" name="canReplicate" [checked]="canReplicate() === true" (change)="canReplicate.set(true)" /> Yes</label>
+    <label><input type="radio" name="canReplicate" [checked]="canReplicate() === false" (change)="canReplicate.set(false)" /> No</label>
+  </fieldset>
+  <fieldset class="choice-group">
+    <legend>Are you the only user affected? <span class="required">*</span></legend>
+    <label><input type="radio" name="onlyUserAffected" [checked]="onlyUserAffected() === true" (change)="onlyUserAffected.set(true)" /> Yes</label>
+    <label><input type="radio" name="onlyUserAffected" [checked]="onlyUserAffected() === false" (change)="onlyUserAffected.set(false)" /> No</label>
+  </fieldset>
+  @if (failureError()) { <p class="error" role="alert">{{ failureError() }}</p> }
+  <div class="form-actions">
+    <button type="button" (click)="closeFailure()">Cancel</button>
+    <button type="button" class="primary" (click)="recordFailure()">Record failed step</button>
+  </div>
+</dialog>
+<dialog #addActionDialog class="add-action-dialog" aria-labelledby="add-action-heading" (cancel)="cancelAddAction($event)">
+  <h2 id="add-action-heading">Add Action</h2>
+  <p class="muted">Add another step to this test case. Earlier run history will stay as it was.</p>
+  <label for="new-action">Action <span class="required">*</span></label>
+  <textarea id="new-action" rows="3" maxlength="2000" [value]="newAction()"
+    (input)="newAction.set($any($event.target).value)"></textarea>
+  <label for="new-expected-result">Expected result <span class="required">*</span></label>
+  <textarea id="new-expected-result" rows="3" maxlength="2000" [value]="newExpectedResult()"
+    (input)="newExpectedResult.set($any($event.target).value)"></textarea>
+  @if (addActionError()) { <p class="error" role="alert">{{ addActionError() }}</p> }
+  <div class="form-actions">
+    <button type="button" [disabled]="addingAction()" (click)="closeAddAction()">Cancel</button>
+    <button type="button" class="primary" [disabled]="addingAction()" (click)="addAction()">
+      {{ addingAction() ? 'Adding…' : 'Add Action' }}
+    </button>
+  </div>
+</dialog>

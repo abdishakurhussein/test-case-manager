@@ -1,1 +1,493 @@
-/* You can add global styles to this file, and also import other style files */
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: #f4f7fb;
+  color: #162337;
+  font-family: Inter, 'Segoe UI', Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+}
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+h1 {
+  font-size: 32px;
+  letter-spacing: -1px;
+  line-height: 1.2;
+  margin-bottom: 10px;
+}
+h2 {
+  font-size: 21px;
+  margin-bottom: 12px;
+}
+h3 {
+  font-size: 16px;
+}
+a {
+  color: #1c56c5;
+  text-underline-offset: 3px;
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+button {
+  cursor: pointer;
+  background: white;
+  border: 1px solid #c9d4e3;
+  border-radius: 7px;
+  padding: 10px 15px;
+  color: #203c5e;
+  font-weight: 600;
+}
+button:hover:not(:disabled) {
+  background: #edf3ff;
+}
+button, a, .panel, .project-card {
+  transition: background-color 160ms ease, border-color 160ms ease,
+    color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.section-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.danger {
+  border-color: #d8a4a1;
+  color: #a52b25;
+  background: #fff;
+}
+
+.danger:hover:not(:disabled) {
+  background: #fff0ef;
+}
+
+.delete-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.delete-section p {
+  margin-bottom: 0;
+}
+
+.delete-section .error {
+  flex-basis: 100%;
+}
+
+.project-card {
+  color: inherit;
+  text-decoration: none;
+  border: 1px solid #c9d4e3;
+  border-radius: 7px;
+  background: #fff;
+}
+
+.project-card:hover {
+  background: #edf3ff;
+}
+
+
+.primary {
+  background: #2463df;
+  color: white;
+  border-color: #2463df;
+}
+.primary:hover:not(:disabled) {
+  background: #184cb8;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 3px solid #699dff;
+  outline-offset: 3px;
+}
+.muted,
+.hint {
+  color: #596a80;
+}
+.hint {
+  font-size: 13px;
+}
+.eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.3px;
+  color: #526a89;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+.page-heading,
+.section-heading,
+.dialog-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.page-heading {
+  margin-bottom: 30px;
+}
+.page-heading p:last-child {
+  margin-bottom: 0;
+}
+.section-heading {
+  margin-bottom: 16px;
+}
+.section-heading h2,
+.section-heading h3 {
+  margin: 0;
+}
+.section-heading p {
+  margin: 6px 0 0;
+}
+.panel {
+  background: white;
+  border: 1px solid #e0e7f0;
+  border-radius: 12px;
+  padding: 25px;
+  margin-bottom: 24px;
+  animation: rise-in 230ms ease-out both;
+}
+@keyframes rise-in {
+  from { transform: translateY(8px); }
+  to { transform: translateY(0); }
+}
+.project-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px #17365c18;
+}
+.status-actions, .step-result-controls, .step-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.step-title-row { justify-content: space-between; }
+.step-pass {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 116px;
+  min-height: 44px;
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid #b5d8bf;
+  border-radius: 7px;
+  color: #236238;
+  cursor: pointer;
+}
+.step-pass input { width: auto; margin: 0; }
+.step-fail-button { width: 116px; min-height: 44px; color: #a52b25; border-color: #d8a4a1; background: #fff6f5; }
+.step-fail-button:hover:not(:disabled) { background: #ffe7e4; }
+.step-fail-button.chosen { background: #fff0ef; border-color: #cd716b; color: #922d28; }
+.run-step.step-passed { background: #f5fcf7; }
+.run-step.step-failed { background: #fff6f5; }
+.run-step { padding-left: 12px; padding-right: 12px; border-radius: 8px; }
+.run-progress { color: #2259bf; font-weight: 700; white-space: nowrap; }
+.icon-action { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 8px; border: 1px solid transparent; border-radius: 8px; background: transparent; }
+.icon-action svg { width: 23px; height: 23px; }
+.icon-danger { color: #a52b25; }
+.icon-danger:hover:not(:disabled) { background: #fff0ef; border-color: #d8a4a1; }
+.icon-edit { color: #2259bf; text-decoration: none; }
+.icon-edit:hover { background: #edf3ff; border-color: #c9d4e3; }
+.run-history { border-top: 1px solid #e0e7f0; padding: 14px 0; }
+.run-history summary { cursor: pointer; display: flex; align-items: center; gap: 10px; }
+.run-history ol { padding-left: 30px; }
+.result-pill { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 76px; background: #dff4e5; color: #236238; border-radius: 6px; padding: 8px 12px; font-weight: 600; }
+.result-pill.failed { background: #fff0ef; color: #922d28; }
+.project-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 16px;
+}
+.project-card {
+  text-align: left;
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 10px;
+  padding: 22px;
+  overflow-wrap: anywhere;
+  font-weight: 400;
+}
+.project-card strong {
+  font-size: 17px;
+}
+.project-card.selected {
+  border-color: #2463df;
+  background: #f0f5ff;
+}
+.folder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  color: #2463df;
+  background: #e9f0ff;
+}
+.folder svg { width: 27px; height: 27px; }
+.link-text {
+  color: #2259bf;
+  font-weight: 600;
+}
+.empty {
+  text-align: center;
+  padding: 35px 12px;
+  color: #596a80;
+}
+.empty h3 {
+  color: #203c5e;
+}
+.module-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 14px 0;
+  border-top: 1px solid #edf0f5;
+}
+small {
+  display: block;
+  color: #596a80;
+}
+.table-wrap {
+  overflow-x: auto;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  text-align: left;
+}
+th {
+  font-size: 12px;
+  color: #596a80;
+  background: #f6f8fc;
+}
+th,
+td {
+  padding: 15px 12px;
+  border-bottom: 1px solid #e8edf4;
+}
+td a {
+  font-weight: 600;
+}
+td {
+  overflow-wrap: anywhere;
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 76px;
+  background: #fff0c9;
+  color: #79500a;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 15px;
+  white-space: nowrap;
+}
+.badge.ready {
+  background: #dff4e5;
+  color: #236238;
+}
+.badge.complete {
+  background: #e5eaff;
+  color: #354aa2;
+}
+.notice {
+  background: #e4f3eb;
+  color: #22563b;
+  padding: 14px;
+  border-radius: 8px;
+}
+.error {
+  background: #fff0ef;
+  color: #922d28;
+  padding: 14px;
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+.error button {
+  margin-left: 10px;
+}
+dialog {
+  width: min(760px, calc(100% - 28px));
+  max-height: 90vh;
+  border: 1px solid #d2dce9;
+  border-radius: 12px;
+  padding: 28px;
+  color: #162337;
+  box-shadow: 0 20px 80px #07142640;
+}
+dialog::backdrop {
+  background: #10243c80;
+}
+.confirm-dialog, .failure-dialog, .add-action-dialog { width: min(540px, calc(100% - 28px)); }
+.confirm-dialog p { margin-bottom: 4px; }
+.choice-group { margin-top: 18px; }
+.choice-group legend { font-weight: 600; }
+.choice-group label { display: inline-flex; align-items: center; gap: 8px; margin: 8px 22px 0 0; }
+.choice-group input { width: auto; margin: 0; }
+.failure-summary, .failure-history { margin-top: 12px; padding: 10px 12px; border-radius: 6px; background: #fff0ef; overflow-wrap: anywhere; }
+.failure-history p { margin: 6px 0; }
+.dialog-heading {
+  margin-bottom: 22px;
+}
+.dialog-heading h2 {
+  margin: 0;
+}
+fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+label {
+  display: block;
+  font-weight: 600;
+  margin: 16px 0 7px;
+}
+input,
+select,
+textarea {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #bdcbdc;
+  border-radius: 6px;
+  background: #fff;
+  color: #162337;
+  margin-top: 6px;
+}
+textarea {
+  resize: vertical;
+}
+input.ng-invalid.ng-touched,
+textarea.ng-invalid.ng-touched,
+select.ng-invalid.ng-touched {
+  border-color: #b3342b;
+}
+.required {
+  color: #a22b22;
+}
+.form-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 14px;
+}
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid #e0e7f0;
+}
+.step-editor {
+  padding: 16px;
+  background: #f5f8fc;
+  border-radius: 8px;
+  margin: 15px 0;
+}
+.step-actions {
+  display: flex;
+  gap: 6px;
+}
+.step-actions button {
+  padding: 5px 10px;
+}
+
+.back-link {
+  display: inline-block;
+  margin-bottom: 25px;
+}
+.preserve {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.metadata {
+  display: flex;
+  gap: 25px;
+  flex-wrap: wrap;
+  color: #596a80;
+  font-size: 13px;
+  border-top: 1px solid #edf0f5;
+  padding-top: 18px;
+}
+.saved-step {
+  display: grid;
+  grid-template-columns: 35px minmax(0, 1fr);
+  gap: 18px;
+  padding: 20px 0;
+  border-top: 1px solid #e0e7f0;
+}
+.step-number {
+  border-radius: 50%;
+  background: #e9f0ff;
+  color: #2259bf;
+  width: 32px;
+  height: 32px;
+  text-align: center;
+  padding-top: 4px;
+  font-weight: 700;
+}
+.saved-step h3 {
+  margin-bottom: 6px;
+}
+.saved-step p:last-child {
+  margin-bottom: 0;
+}
+@media (max-width: 650px) {
+  .page-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  h1 {
+    font-size: 27px;
+  }
+  .panel {
+    padding: 18px;
+  }
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+  .section-heading {
+    flex-wrap: wrap;
+  }
+  dialog {
+    padding: 18px;
+  }
+  .module-row {
+    align-items: flex-start;
+  }
+  .project-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
