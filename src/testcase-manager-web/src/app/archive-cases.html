@@ -1,0 +1,83 @@
+<header class="page-heading">
+  <div>
+    <p class="eyebrow">MANUAL TEST MANAGEMENT</p>
+    <h1>Archived test cases</h1>
+    <p class="muted">Keep older cases and their run history available without crowding active work.</p>
+  </div>
+</header>
+@if (error()) {
+  <div class="error" role="alert">{{ error() }} <button type="button" (click)="load()">Retry</button></div>
+}
+<section class="panel" aria-labelledby="archive-heading">
+  <div class="section-heading">
+    <div>
+      <h2 id="archive-heading">Archive library</h2>
+      <p class="muted">Restore a case to its previous status, or export the archived records.</p>
+      <p class="hint">Exports include all archived cases for the selected project, not only this page or search.</p>
+    </div>
+    <div class="section-actions">
+      @if (total() > 0) {
+        <a class="button-link" [href]="exportUrl('json')">Export JSON</a>
+        <a class="button-link" [href]="exportUrl('csv')">Export CSV ZIP</a>
+      }
+    </div>
+  </div>
+  <div class="archive-filters">
+    <label>Project
+      <select [value]="projectId() ?? ''" (change)="chooseProject($any($event.target).value)">
+        <option value="" [selected]="projectId() === null">All projects</option>
+        @for (project of projectNavigation.projects(); track project.id) {
+          <option [value]="project.id" [selected]="projectId() === project.id">{{ project.name }}</option>
+        }
+      </select>
+    </label>
+    <label>Search archived cases
+      <input type="search" placeholder="Search title or description" [value]="search()"
+        (input)="onSearch($any($event.target).value)" />
+    </label>
+  </div>
+  @if (loading()) {
+    <p role="status">Loading archived cases…</p>
+  } @else if (!cases().length) {
+    <div class="empty">
+      <h3>No archived cases found</h3>
+      <p>{{ search() || projectId() ? 'Try another search or project.' : 'Archived test cases will appear here.' }}</p>
+    </div>
+  } @else {
+    <p class="mobile-table-hint">Swipe sideways to see all archive columns →</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ID</th><th>Test case</th><th>Project / Module</th><th>Previous status</th><th>Archived</th><th>Action</th></tr></thead>
+        <tbody>
+          @for (item of cases(); track item.id) {
+            <tr>
+              <td>TC-{{ item.id.toString().padStart(3, '0') }}</td>
+              <td><a class="case-link" [routerLink]="casePath(item)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="4" y="3" width="16" height="18" rx="2" /><path d="m8 9 1.5 1.5L12 8M8 15h8" />
+                </svg>
+                {{ item.title }}
+              </a></td>
+              <td>{{ item.projectName }}<small>{{ item.moduleName }}</small></td>
+              <td>{{ item.statusBeforeArchive ?? 'Draft' }}</td>
+              <td>{{ item.archivedAt | date: 'mediumDate' }}</td>
+              <td><button type="button" [disabled]="restoringId() !== null" (click)="restore(item)">
+                {{ restoringId() === item.id ? 'Restoring…' : 'Restore' }}
+              </button></td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+  @if (total() > 0) {
+    <div class="case-pagination">
+      <span class="muted">Showing {{ (page() - 1) * pageSize + 1 }}–{{ page() * pageSize < total() ? page() * pageSize : total() }} of {{ total() }} archived cases</span>
+      <div class="pagination-actions">
+        <button type="button" [disabled]="page() === 1 || loading()" (click)="goToPage(page() - 1)">Previous</button>
+        <span aria-live="polite">Page {{ page() }} of {{ totalPages() }}</span>
+        <button type="button" [disabled]="page() >= totalPages() || loading()" (click)="goToPage(page() + 1)">Next</button>
+      </div>
+    </div>
+  }
+</section>

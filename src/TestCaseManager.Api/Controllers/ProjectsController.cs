@@ -14,7 +14,10 @@ public class ProjectsController(AppDbContext db) : ControllerBase
     public async Task<ActionResult<List<ProjectResponse>>> GetAll(CancellationToken token) =>
         await db.Projects.AsNoTracking().OrderBy(project => project.Id)
             .Select(project => new ProjectResponse(project.Id, project.Name, project.Description,
-                project.Modules.Count, project.Modules.SelectMany(module => module.TestCases).Count()))
+                project.Modules.Count, project.Modules.SelectMany(module => module.TestCases)
+                    .Count(item => item.Status != TestCaseStatus.Archived),
+                project.Modules.SelectMany(module => module.TestCases)
+                    .Count(item => item.Status == TestCaseStatus.Archived)))
             .ToListAsync(token);
 
     [HttpGet("{id:int}")]
@@ -22,9 +25,41 @@ public class ProjectsController(AppDbContext db) : ControllerBase
     {
         var project = await db.Projects.AsNoTracking().Where(project => project.Id == id)
             .Select(project => new ProjectResponse(project.Id, project.Name, project.Description,
-                project.Modules.Count, project.Modules.SelectMany(module => module.TestCases).Count()))
+                project.Modules.Count, project.Modules.SelectMany(module => module.TestCases)
+                    .Count(item => item.Status != TestCaseStatus.Archived),
+                project.Modules.SelectMany(module => module.TestCases)
+                    .Count(item => item.Status == TestCaseStatus.Archived)))
             .SingleOrDefaultAsync(token);
         return project is null ? NotFound() : Ok(project);
+    }
+
+    [HttpGet("{id:int}/overview")]
+    public async Task<ActionResult<ProjectOverviewResponse>> GetOverview(int id, CancellationToken token)
+    {
+        if (!await db.Projects.AnyAsync(project => project.Id == id, token)) return NotFound();
+
+        var allCases = db.TestCases.AsNoTracking().Where(item => item.Module.ProjectId == id);
+        var archived = await allCases.CountAsync(item => item.Status == TestCaseStatus.Archived, token);
+        var cases = allCases.Where(item => item.Status != TestCaseStatus.Archived);
+        var states = await cases.GroupBy(_ => 1).Select(group => new
+        {
+            Total = group.Count(),
+            Draft = group.Count(item => item.Status == TestCaseStatus.Draft),
+            Ready = group.Count(item => item.Status == TestCaseStatus.Ready),
+            Complete = group.Count(item => item.Status == TestCaseStatus.Complete)
+        }).SingleOrDefaultAsync(token);
+
+        // Count each case by its latest saved run, not by all historical runs.
+        var latestResults = cases.Select(item => db.ManualRuns
+            .Where(run => run.TestCaseId == item.Id)
+            .OrderByDescending(run => run.CompletedAt).ThenByDescending(run => run.Id)
+            .Select(run => run.Result).FirstOrDefault());
+        var latestPassed = await latestResults.CountAsync(result => result == "Passed", token);
+        var latestFailed = await latestResults.CountAsync(result => result == "Failed", token);
+        var total = states?.Total ?? 0;
+        return Ok(new ProjectOverviewResponse(total, states?.Draft ?? 0, states?.Ready ?? 0,
+            states?.Complete ?? 0, archived, latestPassed, latestFailed,
+            total - latestPassed - latestFailed));
     }
 
     [HttpPost]
@@ -34,7 +69,7 @@ public class ProjectsController(AppDbContext db) : ControllerBase
         db.Projects.Add(project);
         await db.SaveChangesAsync(token);
         return CreatedAtAction(nameof(GetById), new { id = project.Id },
-            new ProjectResponse(project.Id, project.Name, project.Description, 0, 0));
+            new ProjectResponse(project.Id, project.Name, project.Description, 0, 0, 0));
     }
 
     [HttpDelete("{id:int}")]

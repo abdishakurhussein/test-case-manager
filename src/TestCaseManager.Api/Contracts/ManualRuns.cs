@@ -13,6 +13,9 @@ public class SaveManualStepRequest
     public string? ActualResult { get; set; }
     public bool? CanReplicate { get; set; }
     public bool? OnlyUserAffected { get; set; }
+    // Explicit Unknown is distinct from leaving a question unanswered.
+    public bool CanReplicateUnknown { get; set; }
+    public bool OnlyUserAffectedUnknown { get; set; }
 }
 
 public class SaveManualRunRequest

@@ -5,9 +5,13 @@
   <p role="alert" class="error">{{ error() }}</p>
 }
 @if (item(); as item) {
-  <a [routerLink]="projectPath({ id: item.projectId, name: item.projectName })" class="back-link">
-    ← Back to {{ item.projectName }}
-  </a>
+  @if (item.status === 'Archived') {
+    <a routerLink="/archive" [queryParams]="{ projectId: item.projectId }" class="back-link">← Back to archive</a>
+  } @else {
+    <a [routerLink]="projectPath({ id: item.projectId, name: item.projectName })" class="back-link">
+      ← Back to {{ item.projectName }}
+    </a>
+  }
 
   <header class="page-heading case-heading">
     <div>
@@ -17,6 +21,9 @@
     </div>
     <div class="status-actions">
       <span class="badge" [class.ready]="item.status === 'Ready'" [class.complete]="item.status === 'Complete'">{{ item.status }}</span>
+      @if (item.status === 'Draft' || item.status === 'Ready') {
+        <button type="button" [disabled]="savingStatus() || savingRun()" (click)="openEdit()">Edit case</button>
+      }
       @if (item.status === 'Draft') {
         <button type="button" [disabled]="savingStatus()" (click)="changeStatus('Ready')">
           {{ savingStatus() ? 'Saving…' : 'Mark ready' }}
@@ -34,9 +41,12 @@
     </div>
   </header>
 
-  @if (notice()) { <p class="notice" role="status">{{ notice() }}</p> }
   @if (statusError()) { <p class="error" role="alert">{{ statusError() }}</p> }
+  @if (item.status === 'Ready' && runs().length === 0) {
+    <p class="hint">Save at least one manual run before marking this case Complete.</p>
+  }
   @if (item.status === 'Complete') { <p class="hint">This completed test case is view-only. Its saved runs remain available below.</p> }
+  @if (item.status === 'Archived') { <p class="hint">This archived test case is view-only. Restore it to work on it again.</p> }
 
   <section class="panel">
     <h2>Case details</h2>
@@ -54,25 +64,48 @@
     <div class="section-heading">
       <div>
         <h2>Manual test run</h2>
-        <p class="muted">Mark every step Passed or Failed, then save the completed run.</p>
+        <p class="muted">Done means this action has a result in the latest saved run. New or changed actions are Outstanding.</p>
       </div>
       <div class="section-actions">
-        <span class="run-progress">{{ markedCount() }} / {{ item.steps.length }} recorded</span>
-        <button type="button" class="primary" [disabled]="item.status === 'Complete' || item.steps.length >= 100 || savingRun() || addingAction()"
+        @if (recordingRun()) {
+          <span class="run-progress">{{ markedCount() }} / {{ item.steps.length }} recorded</span>
+          <button type="button" [disabled]="!nextUnrecordedStep()"
+            (click)="jumpToNextUnrecorded()">Next unrecorded step</button>
+        } @else if (runs().length && item.status === 'Ready') {
+          <button type="button" (click)="startAnotherRun()">Start another run</button>
+        }
+        <button type="button" class="primary" [disabled]="item.status === 'Complete' || item.status === 'Archived' || item.steps.length >= 100 || savingRun() || addingAction()"
           (click)="openAddAction()">+ Add Actions</button>
       </div>
     </div>
+    @if (item.status === 'Draft') {
+      <p class="run-draft-hint">This case is a Draft. You can edit or add actions, but mark it Ready before recording Passed/Failed results.</p>
+    }
+    @if (recordingRun()) {
+      <progress class="run-progress-bar" [value]="markedCount()" [max]="item.steps.length"
+        [attr.aria-label]="markedCount() + ' of ' + item.steps.length + ' steps recorded'"></progress>
+      <p class="run-breakdown">{{ passedCount() }} passed · {{ failedCount() }} failed · {{ item.steps.length - markedCount() }} unrecorded</p>
+      @if (markedCount() > 0) {
+        <p class="run-unsaved" role="status">Unfinished run — these choices are not saved yet. Save the completed run before leaving.</p>
+      }
+    } @else if (runs().length) {
+      <p class="run-breakdown">Latest saved run: <strong>{{ runs()[0].result }}</strong> · {{ runs()[0].completedAt | date: 'medium' }}</p>
+    }
     @for (step of item.steps; track step.id) {
-      <article class="saved-step run-step" [class.step-passed]="decisions()[step.id] === 'Passed'"
+      <article class="saved-step run-step" [id]="'run-step-' + step.id" tabindex="-1" [class.step-passed]="decisions()[step.id] === 'Passed'"
         [class.step-failed]="decisions()[step.id] === 'Failed'">
         <span class="step-number">{{ step.position }}</span>
         <div>
           <div class="step-title-row">
-            <h3>Action</h3>
+            <h3>Action
+              <span class="action-state" [class.outstanding]="!isStepDone(step)">
+                {{ isStepDone(step) ? 'Done' : 'Outstanding' }}
+              </span>
+            </h3>
             <button type="button" class="icon-action icon-danger"
               [attr.aria-label]="item.steps.length === 1 ? 'Delete test case by removing last step' : 'Remove step ' + step.position"
               [attr.title]="item.steps.length === 1 ? 'Delete test case' : 'Remove step ' + step.position + ' from case definition'"
-              [disabled]="item.status === 'Complete' || removingStepId() !== null || savingRun() || deleting()"
+              [disabled]="item.status === 'Complete' || item.status === 'Archived' || removingStepId() !== null || savingRun() || deleting()"
               (click)="removeStep(step.id)">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m5 4v7m4-7v7" />
@@ -82,6 +115,12 @@
           <p class="preserve">{{ step.action }}</p>
           <h3>Expected result</h3>
           <p class="preserve">{{ step.expectedResult }}</p>
+          @if (latestSavedSteps().get(step.id); as saved) {
+            @if (isStepDone(step)) {
+              <p class="saved-action-result">Latest saved result: <strong [class.failed]="saved.outcome === 'Failed'">{{ saved.outcome }}</strong></p>
+            }
+          }
+          @if (recordingRun()) {
           <div class="step-result-controls" role="group" [attr.aria-label]="'Result for step ' + step.position">
             <label class="step-pass">
               <input type="checkbox" [checked]="decisions()[step.id] === 'Passed'"
@@ -97,18 +136,24 @@
               ✕ Failed
             </button>
           </div>
+          @if (decisions()[step.id]; as outcome) {
+            <p class="step-unsaved-result" [class.failed]="outcome === 'Failed'">{{ outcome }} — not saved yet</p>
+          }
           @if (decisions()[step.id] === 'Failed' && failureDetails()[step.id]; as failure) {
             <p class="failure-summary">Actual result: {{ failure.actualResult }}</p>
+          }
           }
         </div>
       </article>
     }
     @if (runError()) { <p class="error" role="alert">{{ runError() }}</p> }
-    <div class="form-actions">
-      <button type="button" class="primary" [disabled]="!canSaveRun()" (click)="saveRun()">
-        {{ savingRun() ? 'Saving…' : 'Save completed run' }}
-      </button>
-    </div>
+    @if (recordingRun()) {
+      <div class="form-actions">
+        <button type="button" class="primary" [disabled]="!canSaveRun()" (click)="saveRun()">
+          {{ savingRun() ? 'Saving…' : 'Save completed run' }}
+        </button>
+      </div>
+    }
   </section>
 
   <section class="panel">
@@ -130,8 +175,8 @@
                   <div class="failure-history">
                     <strong>Actual Result</strong>
                     <p class="preserve">{{ step.actualResult }}</p>
-                    <span>Can this issue be replicated? {{ step.canReplicate === true ? 'Yes' : step.canReplicate === false ? 'No' : 'Not recorded' }}</span><br />
-                    <span>Are you the only user affected? {{ step.onlyUserAffected === true ? 'Yes' : step.onlyUserAffected === false ? 'No' : 'Not recorded' }}</span>
+                    <span>Can this issue be replicated? {{ step.canReplicate === true ? 'Yes' : step.canReplicate === false ? 'No' : 'Unknown' }}</span><br />
+                    <span>Are you the only user affected? {{ step.onlyUserAffected === true ? 'Yes' : step.onlyUserAffected === false ? 'No' : 'Unknown' }}</span>
                   </div>
                 }
               </li>
@@ -141,6 +186,19 @@
       }
     }
   </section>
+
+  @if (item.status === 'Archived') {
+  <section class="panel delete-section">
+    <div>
+      <h2>Restore test case</h2>
+      <p class="muted">Return this case to its previous status with steps and run history intact.</p>
+    </div>
+    <button type="button" [disabled]="archiveBusy()" (click)="restoreCase()">
+      {{ archiveBusy() ? 'Restoring…' : 'Restore case' }}
+    </button>
+    @if (archiveError()) { <p class="error" role="alert">{{ archiveError() }}</p> }
+  </section>
+  }
 
   <section class="panel delete-section">
     <div>
@@ -161,19 +219,73 @@
     (input)="actualResult.set($any($event.target).value)"></textarea>
   <fieldset class="choice-group">
     <legend>Can this issue be replicated? <span class="required">*</span></legend>
-    <label><input type="radio" name="canReplicate" [checked]="canReplicate() === true" (change)="canReplicate.set(true)" /> Yes</label>
-    <label><input type="radio" name="canReplicate" [checked]="canReplicate() === false" (change)="canReplicate.set(false)" /> No</label>
+    <label><input type="radio" name="canReplicate" [checked]="canReplicate() === 'Yes'" (change)="canReplicate.set('Yes')" /> Yes</label>
+    <label><input type="radio" name="canReplicate" [checked]="canReplicate() === 'No'" (change)="canReplicate.set('No')" /> No</label>
+    <label><input type="radio" name="canReplicate" [checked]="canReplicate() === 'Unknown'" (change)="canReplicate.set('Unknown')" /> Unknown</label>
   </fieldset>
   <fieldset class="choice-group">
     <legend>Are you the only user affected? <span class="required">*</span></legend>
-    <label><input type="radio" name="onlyUserAffected" [checked]="onlyUserAffected() === true" (change)="onlyUserAffected.set(true)" /> Yes</label>
-    <label><input type="radio" name="onlyUserAffected" [checked]="onlyUserAffected() === false" (change)="onlyUserAffected.set(false)" /> No</label>
+    <label><input type="radio" name="onlyUserAffected" [checked]="onlyUserAffected() === 'Yes'" (change)="onlyUserAffected.set('Yes')" /> Yes</label>
+    <label><input type="radio" name="onlyUserAffected" [checked]="onlyUserAffected() === 'No'" (change)="onlyUserAffected.set('No')" /> No</label>
+    <label><input type="radio" name="onlyUserAffected" [checked]="onlyUserAffected() === 'Unknown'" (change)="onlyUserAffected.set('Unknown')" /> Unknown</label>
   </fieldset>
   @if (failureError()) { <p class="error" role="alert">{{ failureError() }}</p> }
   <div class="form-actions">
     <button type="button" (click)="closeFailure()">Cancel</button>
     <button type="button" class="primary" (click)="recordFailure()">Record failed step</button>
   </div>
+</dialog>
+<dialog #editDialog class="edit-case-dialog" aria-labelledby="edit-case-heading" (cancel)="cancelEdit($event)">
+  @if (editValue(); as edit) {
+    <h2 id="edit-case-heading">Edit test case</h2>
+    <p class="muted">Update the reusable case. Earlier manual runs keep their original snapshots.</p>
+    <div class="form-grid">
+      <label>Title <span class="required">*</span>
+        <input type="text" maxlength="200" [value]="edit.title" (input)="editField('title', $any($event.target).value)" />
+      </label>
+      <label>Priority
+        <select [value]="edit.priority" (change)="editField('priority', $any($event.target).value)">
+          <option value="Trivial">Trivial</option><option value="Minor">Minor</option>
+          <option value="Major">Major</option><option value="Critical">Critical</option>
+        </select>
+      </label>
+    </div>
+    <label>Description
+      <textarea rows="3" maxlength="4000" [value]="edit.description" (input)="editField('description', $any($event.target).value)"></textarea>
+    </label>
+    <label>Preconditions
+      <textarea rows="3" maxlength="4000" [value]="edit.preconditions" (input)="editField('preconditions', $any($event.target).value)"></textarea>
+    </label>
+    <div class="section-heading">
+      <h3>Test steps</h3>
+      <button type="button" [disabled]="edit.steps.length >= 100 || savingEdit()" (click)="addEditStep()">+ Add step</button>
+    </div>
+    @for (step of edit.steps; track step; let i = $index) {
+      <div class="step-editor edit-step">
+        <div class="section-heading">
+          <strong>Step {{ i + 1 }}</strong>
+          <div class="edit-step-actions">
+            <button type="button" [disabled]="i === 0 || savingEdit()" [attr.aria-label]="'Move step ' + (i + 1) + ' up'" (click)="moveEditStep(i, -1)">↑</button>
+            <button type="button" [disabled]="i === edit.steps.length - 1 || savingEdit()" [attr.aria-label]="'Move step ' + (i + 1) + ' down'" (click)="moveEditStep(i, 1)">↓</button>
+            <button type="button" class="danger" [disabled]="edit.steps.length === 1 || savingEdit()" [attr.aria-label]="'Remove step ' + (i + 1)" (click)="removeEditStep(i)">Remove</button>
+          </div>
+        </div>
+        <label>Action <span class="required">*</span>
+          <textarea rows="2" maxlength="2000" [value]="step.action" (input)="editStep(i, 'action', $any($event.target).value)"></textarea>
+        </label>
+        <label>Expected result <span class="required">*</span>
+          <textarea rows="2" maxlength="2000" [value]="step.expectedResult" (input)="editStep(i, 'expectedResult', $any($event.target).value)"></textarea>
+        </label>
+      </div>
+    }
+    @if (editError()) { <p class="error" role="alert">{{ editError() }}</p> }
+    <div class="form-actions">
+      <button type="button" [disabled]="savingEdit()" (click)="closeEdit()">Cancel</button>
+      <button type="button" class="primary" [disabled]="savingEdit()" (click)="saveEdit()">
+        {{ savingEdit() ? 'Saving…' : 'Save changes' }}
+      </button>
+    </div>
+  }
 </dialog>
 <dialog #addActionDialog class="add-action-dialog" aria-labelledby="add-action-heading" (cancel)="cancelAddAction($event)">
   <h2 id="add-action-heading">Add Action</h2>

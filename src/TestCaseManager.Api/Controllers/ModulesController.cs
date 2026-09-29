@@ -17,7 +17,9 @@ public class ModulesController(AppDbContext db) : ControllerBase
             return NotFound(new ProblemDetails { Title = "Project not found." });
         return await db.Modules.AsNoTracking().Where(module => module.ProjectId == projectId)
             .OrderBy(module => module.Name)
-            .Select(module => new ModuleResponse(module.Id, module.ProjectId, module.Name, module.Description, module.TestCases.Count))
+            .Select(module => new ModuleResponse(module.Id, module.ProjectId, module.Name, module.Description,
+                module.TestCases.Count(item => item.Status != TestCaseStatus.Archived),
+                module.TestCases.Count(item => item.Status == TestCaseStatus.Archived)))
             .ToListAsync(token);
     }
 
@@ -25,7 +27,9 @@ public class ModulesController(AppDbContext db) : ControllerBase
     public async Task<ActionResult<ModuleResponse>> GetById(int id, CancellationToken token)
     {
         var module = await db.Modules.AsNoTracking().Where(module => module.Id == id)
-            .Select(module => new ModuleResponse(module.Id, module.ProjectId, module.Name, module.Description, module.TestCases.Count))
+            .Select(module => new ModuleResponse(module.Id, module.ProjectId, module.Name, module.Description,
+                module.TestCases.Count(item => item.Status != TestCaseStatus.Archived),
+                module.TestCases.Count(item => item.Status == TestCaseStatus.Archived)))
             .SingleOrDefaultAsync(token);
         return module is null ? NotFound() : Ok(module);
     }
@@ -39,7 +43,7 @@ public class ModulesController(AppDbContext db) : ControllerBase
         db.Modules.Add(module);
         await db.SaveChangesAsync(token);
         return CreatedAtAction(nameof(GetById), new { id = module.Id },
-            new ModuleResponse(module.Id, module.ProjectId, module.Name, module.Description, 0));
+            new ModuleResponse(module.Id, module.ProjectId, module.Name, module.Description, 0, 0));
     }
 
     [HttpDelete("{id:int}")]
@@ -56,7 +60,7 @@ public class ModulesController(AppDbContext db) : ControllerBase
             return Conflict (new ProblemDetails
             {
                 Title = "Module cannot be deleted.",
-                Detail = "Delete its test cases first."
+                Detail = "Remove its active cases, and restore then remove any archived cases, before deleting this module."
             });
 
         db.Modules.Remove(module);
