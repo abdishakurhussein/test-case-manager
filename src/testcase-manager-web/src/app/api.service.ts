@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 
 export interface Project {
   id: number;
@@ -7,6 +7,7 @@ export interface Project {
   description: string;
   moduleCount: number;
   testCaseCount: number;
+  archivedCaseCount: number;
 }
 export interface Module {
   id: number;
@@ -14,6 +15,7 @@ export interface Module {
   name: string;
   description: string;
   testCaseCount: number;
+  archivedCaseCount: number;
 }
 export interface CaseSummary {
   id: number;
@@ -25,6 +27,37 @@ export interface CaseSummary {
   priority: string;
   status: string;
   updatedAt: string;
+  runCount: number;
+  latestRunResult: 'Passed' | 'Failed' | null;
+  latestRunAt: string | null;
+  archivedAt: string | null;
+  statusBeforeArchive: string | null;
+}
+export interface ProjectOverview {
+  totalCases: number;
+  draft: number;
+  ready: number;
+  complete: number;
+  archived: number;
+  latestPassed: number;
+  latestFailed: number;
+  neverRun: number;
+}
+export interface PagedResult<T> {
+  items: T[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+}
+export interface CaseSearchOptions {
+  projectId?: number;
+  moduleId?: number;
+  q?: string;
+  status?: string;
+  priority?: string;
+  sort?: string;
+  page?: number;
+  pageSize?: number;
 }
 export interface TestStep {
   id: number;
@@ -47,14 +80,24 @@ export interface CreateCase {
   status: string;
   steps: { action: string; expectedResult: string }[];
 }
+export interface UpdateCase {
+  title: string;
+  description: string;
+  preconditions: string;
+  priority: string;
+  expectedUpdatedAt: string;
+  steps: { id: number | null; action: string; expectedResult: string }[];
+}
 
 export type StepOutcome = 'Passed' | 'Failed';
 export interface ManualStepDecision {
   stepId: number;
   outcome: StepOutcome;
   actualResult?: string;
-  canReplicate?: boolean;
-  onlyUserAffected?: boolean;
+  canReplicate?: boolean | null;
+  onlyUserAffected?: boolean | null;
+  canReplicateUnknown?: boolean;
+  onlyUserAffectedUnknown?: boolean;
 }
 export interface ManualRun {
   id: number;
@@ -80,17 +123,33 @@ export class ApiService {
   projects() {
     return this.http.get<Project[]>('/api/projects');
   }
+  projectOverview(id: number) {
+    return this.http.get<ProjectOverview>(`/api/projects/${id}/overview`);
+  }
   modules(projectId: number) {
     return this.http.get<Module[]>('/api/modules', { params: { projectId } });
   }
   cases() {
     return this.http.get<CaseSummary[]>('/api/testcases');
   }
+  searchCases(options: CaseSearchOptions) {
+    let params = new HttpParams();
+    for (const [key, value] of Object.entries(options)) {
+      if (value !== undefined && value !== '') params = params.set(key, String(value));
+    }
+    return this.http.get<PagedResult<CaseSummary>>('/api/testcases/search', { params });
+  }
   case(id: number) {
     return this.http.get<TestCase>(`/api/testcases/${id}`);
   }
   updateCaseStatus(id: number, status: 'Draft' | 'Ready' | 'Complete') {
     return this.http.patch<void>(`/api/testcases/${id}/status`, { status });
+  }
+  archiveCase(id: number) {
+    return this.http.post<void>(`/api/testcases/${id}/archive`, {});
+  }
+  restoreCase(id: number) {
+    return this.http.post<void>(`/api/testcases/${id}/restore`, {});
   }
   createProject(value: { name: string; description: string }) {
     return this.http.post<Project>('/api/projects', value);
@@ -100,6 +159,9 @@ export class ApiService {
   }
   createCase(value: CreateCase) {
     return this.http.post<TestCase>('/api/testcases', value);
+  }
+  updateCase(id: number, value: UpdateCase) {
+    return this.http.put<TestCase>(`/api/testcases/${id}`, value);
   }
   deleteCase(id: number) {
     return this.http.delete<void>(`/api/testcases/${id}`);
@@ -132,8 +194,10 @@ export class ApiService {
 
 export function errorMessage(error: unknown): string {
   if (error instanceof HttpErrorResponse) {
-    if (error.status === 0 || error.status >= 500)
+    if (error.status === 0)
       return 'Cannot reach the local API. Check that it is running, then try again. Your form has been kept.';
+    if (error.status >= 500)
+      return 'The local API returned a server error. Check its terminal output and database migrations, then try again. Your form has been kept.';
     const errors = error.error?.errors;
     if (errors) return Object.values(errors).flat().join(' ');
     return error.error?.detail ?? error.error?.title ?? 'The request could not be completed.';

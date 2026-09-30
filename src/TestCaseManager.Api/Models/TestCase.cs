@@ -13,6 +13,8 @@ namespace TestCaseManager.Api.Models
         public string Preconditions { get; set; } = string.Empty;
         public TestPriority Priority { get; set; } = TestPriority.Major;
         public TestCaseStatus Status { get; set; } = TestCaseStatus.Draft;
+        public TestCaseStatus? StatusBeforeArchive { get; set; }
+        public DateTime? ArchivedAt { get; set; }
         public int ModuleId { get; set; }
         public Module Module { get; set; } = null!;
         public List<TestStep> Steps { get; set; } = new();

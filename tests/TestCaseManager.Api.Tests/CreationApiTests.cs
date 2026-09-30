@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.IO.Compression;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -83,6 +85,216 @@ public class CreationApiTests
         var projects = (await client.GetFromJsonAsync<List<ProjectResponse>>("/api/projects"))!;
         Assert.Equal(1, projects.Single().ModuleCount);
         Assert.Equal(1, projects.Single().TestCaseCount);
+    }
+
+    [Fact]
+    public async Task SearchCases_FiltersSortsAndPagesWithoutReturningEveryCase()
+    {
+        await using var factory = new ApiFactory();
+        using var client = await factory.OpenAsync();
+        var module = await CreateModuleAsync(client);
+        foreach (var (title, status, priority) in new[]
+        {
+            ("Alpha login", "Draft", "Minor"),
+            ("Beta login", "Ready", "Major"),
+            ("Gamma checkout", "Ready", "Critical")
+        })
+        {
+            var request = ValidRequest(module.Id);
+            request["title"] = title;
+            request["status"] = status;
+            request["priority"] = priority;
+            Assert.Equal(HttpStatusCode.Created,
+                (await client.PostAsJsonAsync("/api/testcases", request)).StatusCode);
+        }
+
+        var page = await client.GetFromJsonAsync<PagedResult<TestCaseSummary>>(
+            $"/api/testcases/search?projectId={module.ProjectId}&q=LOGIN&sort=title-asc&page=1&pageSize=1");
+        Assert.NotNull(page);
+        Assert.Equal(2, page.TotalCount);
+        Assert.Single(page.Items);
+        Assert.Equal("Alpha login", page.Items[0].Title);
+
+        var second = await client.GetFromJsonAsync<PagedResult<TestCaseSummary>>(
+            $"/api/testcases/search?moduleId={module.Id}&status=Ready&sort=title-asc&page=2&pageSize=1");
+        Assert.NotNull(second);
+        Assert.Equal(2, second.TotalCount);
+        Assert.Equal("Gamma checkout", Assert.Single(second.Items).Title);
+
+        var critical = await client.GetFromJsonAsync<PagedResult<TestCaseSummary>>(
+            "/api/testcases/search?priority=Critical");
+        Assert.Equal("Gamma checkout", Assert.Single(critical!.Items).Title);
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await client.GetAsync("/api/testcases/search?pageSize=101")).StatusCode);
+    }
+
+    [Fact]
+    public async Task ProjectOverview_AndCaseRows_SeparateLifecycleFromLatestRun()
+    {
+        await using var factory = new ApiFactory();
+        using var client = await factory.OpenAsync();
+        var module = await CreateModuleAsync(client);
+        var caseIds = new List<TestCaseResponse>();
+        foreach (var (title, status) in new[] { ("Not started", "Draft"), ("Flaky", "Ready"),
+            ("Done", "Ready"), ("Stable", "Ready") })
+        {
+            var request = ValidRequest(module.Id);
+            request["title"] = title;
+            request["status"] = status;
+            var response = await client.PostAsJsonAsync("/api/testcases", request);
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+            caseIds.Add((await response.Content.ReadFromJsonAsync<TestCaseResponse>())!);
+        }
+
+        async Task SaveRun(TestCaseResponse item, bool failed)
+        {
+            var response = await client.PostAsJsonAsync($"/api/testcases/{item.Id}/runs", new
+            {
+                steps = new object[]
+                {
+                    new { stepId = item.Steps[0].Id, outcome = "Passed" },
+                    new { stepId = item.Steps[1].Id, outcome = failed ? "Failed" : "Passed",
+                        actualResult = failed ? "Error" : null, canReplicate = failed ? (bool?)true : null,
+                        onlyUserAffected = failed ? (bool?)false : null }
+                }
+            });
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        }
+
+        await SaveRun(caseIds[1], false);
+        await SaveRun(caseIds[1], true);
+        await SaveRun(caseIds[2], true);
+        await SaveRun(caseIds[3], false);
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await client.PatchAsJsonAsync($"/api/testcases/{caseIds[2].Id}/status", new { status = "Complete" })).StatusCode);
+
+        var overview = await client.GetFromJsonAsync<ProjectOverviewResponse>($"/api/projects/{module.ProjectId}/overview");
+        Assert.NotNull(overview);
+        Assert.Equal(4, overview.TotalCases);
+        Assert.Equal(1, overview.Draft);
+        Assert.Equal(2, overview.Ready);
+        Assert.Equal(1, overview.Complete);
+        Assert.Equal(1, overview.LatestPassed);
+        Assert.Equal(2, overview.LatestFailed);
+        Assert.Equal(1, overview.NeverRun);
+
+        var search = await client.GetFromJsonAsync<PagedResult<TestCaseSummary>>(
+            $"/api/testcases/search?projectId={module.ProjectId}");
+        Assert.NotNull(search);
+        var flaky = Assert.Single(search.Items, item => item.Title == "Flaky");
+        Assert.Equal("Ready", flaky.Status);
+        Assert.Equal(2, flaky.RunCount);
+        Assert.Equal("Failed", flaky.LatestRunResult);
+        Assert.Equal(DateTimeKind.Utc, flaky.LatestRunAt!.Value.Kind);
+        var done = Assert.Single(search.Items, item => item.Title == "Done");
+        Assert.Equal("Complete", done.Status);
+        Assert.Equal("Failed", done.LatestRunResult);
+        var notStarted = Assert.Single(search.Items, item => item.Title == "Not started");
+        Assert.Equal(0, notStarted.RunCount);
+        Assert.Null(notStarted.LatestRunResult);
+        Assert.Null(notStarted.LatestRunAt);
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await client.GetAsync("/api/projects/999999/overview")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Archive_ExportsFullHistory_AndRestoresPreviousStatus()
+    {
+        await using var factory = new ApiFactory();
+        using var client = await factory.OpenAsync();
+        var module = await CreateModuleAsync(client);
+        var request = ValidRequest(module.Id);
+        request["title"] = "=SUM(1,1)";
+        var created = (await (await client.PostAsJsonAsync("/api/testcases", request))
+            .Content.ReadFromJsonAsync<TestCaseResponse>())!;
+        var caseUrl = $"/api/testcases/{created.Id}";
+        var runResponse = await client.PostAsJsonAsync(caseUrl + "/runs", new
+        {
+            steps = new object[]
+            {
+                new { stepId = created.Steps[0].Id, outcome = "Passed" },
+                new { stepId = created.Steps[1].Id, outcome = "Failed", actualResult = "Incorrect result",
+                    canReplicateUnknown = true, onlyUserAffectedUnknown = true }
+            }
+        });
+        Assert.Equal(HttpStatusCode.Created, runResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await client.PatchAsJsonAsync(caseUrl + "/status", new { status = "Complete" })).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsync(caseUrl + "/archive", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsync(caseUrl + "/archive", null)).StatusCode);
+
+        var active = await client.GetFromJsonAsync<PagedResult<TestCaseSummary>>(
+            $"/api/testcases/search?projectId={module.ProjectId}");
+        Assert.Equal(0, active!.TotalCount);
+        var archived = await client.GetFromJsonAsync<PagedResult<TestCaseSummary>>(
+            $"/api/testcases/search?projectId={module.ProjectId}&status=Archived");
+        var archivedCase = Assert.Single(archived!.Items);
+        Assert.Equal("Complete", archivedCase.StatusBeforeArchive);
+        Assert.NotNull(archivedCase.ArchivedAt);
+        var project = await client.GetFromJsonAsync<ProjectResponse>($"/api/projects/{module.ProjectId}");
+        Assert.Equal(0, project!.TestCaseCount);
+        Assert.Equal(1, project.ArchivedCaseCount);
+        var moduleNow = await client.GetFromJsonAsync<ModuleResponse>($"/api/modules/{module.Id}");
+        Assert.Equal(0, moduleNow!.TestCaseCount);
+        Assert.Equal(1, moduleNow.ArchivedCaseCount);
+        var overview = await client.GetFromJsonAsync<ProjectOverviewResponse>($"/api/projects/{module.ProjectId}/overview");
+        Assert.Equal(0, overview!.TotalCases);
+        Assert.Equal(1, overview.Archived);
+        Assert.Equal(HttpStatusCode.Conflict,
+            (await client.PostAsJsonAsync(caseUrl + "/runs", new
+            {
+                steps = new object[]
+                {
+                    new { stepId = created.Steps[0].Id, outcome = "Passed" },
+                    new { stepId = created.Steps[1].Id, outcome = "Passed" }
+                }
+            })).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict,
+            (await client.PatchAsJsonAsync(caseUrl + "/status", new { status = "Draft" })).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict,
+            (await client.PostAsJsonAsync(caseUrl + "/steps", new
+            { action = "Unexpected edit", expectedResult = "Blocked" })).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict,
+            (await client.DeleteAsync(caseUrl + $"/steps/{created.Steps[0].Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await client.GetAsync("/api/archive/export?format=xlsx")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await client.GetAsync("/api/archive/export?projectId=999999")).StatusCode);
+
+        var json = await client.GetAsync($"/api/archive/export?format=json&projectId={module.ProjectId}");
+        Assert.Equal(HttpStatusCode.OK, json.StatusCode);
+        Assert.Equal("application/json", json.Content.Headers.ContentType?.MediaType);
+        using (var payload = JsonDocument.Parse(await json.Content.ReadAsStringAsync()))
+        {
+            var exported = Assert.Single(payload.RootElement.GetProperty("cases").EnumerateArray());
+            Assert.Equal("=SUM(1,1)", exported.GetProperty("title").GetString());
+            Assert.Equal(2, exported.GetProperty("steps").GetArrayLength());
+            var historicalRun = Assert.Single(exported.GetProperty("runs").EnumerateArray());
+            Assert.Equal("Failed", historicalRun.GetProperty("result").GetString());
+            Assert.Equal("Incorrect result", historicalRun.GetProperty("steps")[1]
+                .GetProperty("actualResult").GetString());
+        }
+        var csv = await client.GetAsync($"/api/archive/export?format=csv&projectId={module.ProjectId}");
+        Assert.Equal("application/zip", csv.Content.Headers.ContentType?.MediaType);
+        using (var stream = new MemoryStream(await csv.Content.ReadAsByteArrayAsync()))
+        using (var zip = new ZipArchive(stream, ZipArchiveMode.Read))
+        {
+            Assert.Equal(4, zip.Entries.Count);
+            using var reader = new StreamReader(zip.GetEntry("cases.csv")!.Open());
+            Assert.Contains("'=SUM(1,1)", await reader.ReadToEndAsync());
+            Assert.NotNull(zip.GetEntry("case_steps.csv"));
+            Assert.NotNull(zip.GetEntry("runs.csv"));
+            Assert.NotNull(zip.GetEntry("run_steps.csv"));
+        }
+
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsync(caseUrl + "/restore", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsync(caseUrl + "/restore", null)).StatusCode);
+        var restored = await client.GetFromJsonAsync<TestCaseResponse>(caseUrl);
+        Assert.Equal("Complete", restored!.Status);
+        Assert.Null(restored.ArchivedAt);
+        Assert.Single((await client.GetFromJsonAsync<List<ManualRunResponse>>(caseUrl + "/runs"))!);
+        Assert.Equal(0, (await client.GetFromJsonAsync<PagedResult<TestCaseSummary>>(
+            "/api/testcases/search?status=Archived"))!.TotalCount);
     }
 
     [Theory]
@@ -187,6 +399,13 @@ public class CreationApiTests
         Assert.Equal(HttpStatusCode.Conflict,
             (await client.PostAsJsonAsync($"{caseUrl}/steps", new { action = "Another action", expectedResult = "Result" })).StatusCode);
         Assert.Equal(HttpStatusCode.Conflict,
+            (await client.PutAsJsonAsync(caseUrl, new
+            {
+                title = "Changed", priority = "Major", expectedUpdatedAt = testCase.UpdatedAt,
+                steps = testCase.Steps.Select(step => new { id = step.Id, action = step.Action,
+                    expectedResult = step.ExpectedResult }).ToArray()
+            })).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict,
             (await client.DeleteAsync($"{caseUrl}/steps/{testCase.Steps[0].Id}")).StatusCode);
         Assert.Equal(HttpStatusCode.Conflict,
             (await client.PostAsJsonAsync(runsUrl, new
@@ -236,6 +455,71 @@ public class CreationApiTests
     }
 
     [Fact]
+    public async Task UpdateCase_EditsAndReordersSteps_WithoutChangingRunHistory()
+    {
+        await using var factory = new ApiFactory();
+        using var client = await factory.OpenAsync();
+        var module = await CreateModuleAsync(client);
+        var testCase = (await (await client.PostAsJsonAsync("/api/testcases", ValidRequest(module.Id)))
+            .Content.ReadFromJsonAsync<TestCaseResponse>())!;
+        var caseUrl = $"/api/testcases/{testCase.Id}";
+        var runsUrl = $"{caseUrl}/runs";
+        Assert.Equal(HttpStatusCode.Created, (await client.PostAsJsonAsync(runsUrl, new
+        {
+            steps = testCase.Steps.Select(step => new { stepId = step.Id, outcome = "Passed" }).ToArray()
+        })).StatusCode);
+
+        var update = await client.PutAsJsonAsync(caseUrl, new
+        {
+            title = "  Updated login  ", description = " New description ",
+            preconditions = " Open site ", priority = "Critical",
+            expectedUpdatedAt = testCase.UpdatedAt,
+            steps = new object[]
+            {
+                new { id = (int?)testCase.Steps[1].Id, action = "Revised submit", expectedResult = "Dashboard opens" },
+                new { id = (int?)testCase.Steps[0].Id, action = "Open login", expectedResult = "Form appears" },
+                new { id = (int?)null, action = "Check profile", expectedResult = "Profile opens" }
+            }
+        });
+        Assert.True(update.StatusCode == HttpStatusCode.OK,
+            await update.Content.ReadAsStringAsync());
+        var edited = (await update.Content.ReadFromJsonAsync<TestCaseResponse>())!;
+        Assert.Equal("Updated login", edited.Title);
+        Assert.Equal("New description", edited.Description);
+        Assert.Equal("Critical", edited.Priority);
+        Assert.Equal(new[] { "Revised submit", "Open login", "Check profile" },
+            edited.Steps.Select(step => step.Action));
+        Assert.Equal(new[] { 1, 2, 3 }, edited.Steps.Select(step => step.Position));
+        Assert.Equal(testCase.Steps[1].Id, edited.Steps[0].Id);
+        Assert.Equal(testCase.Steps[0].Id, edited.Steps[1].Id);
+
+        Assert.Equal(HttpStatusCode.Conflict,
+            (await client.PutAsJsonAsync(caseUrl, new
+            {
+                title = "Stale", priority = "Major", expectedUpdatedAt = testCase.UpdatedAt,
+                steps = new[] { new { id = edited.Steps[0].Id, action = "Again", expectedResult = "Again" } }
+            })).StatusCode);
+
+        var remove = await client.PutAsJsonAsync(caseUrl, new
+        {
+            title = edited.Title, description = edited.Description, preconditions = edited.Preconditions,
+            priority = edited.Priority, expectedUpdatedAt = edited.UpdatedAt,
+            steps = new object[]
+            {
+                new { id = (int?)edited.Steps[0].Id, action = edited.Steps[0].Action,
+                    expectedResult = edited.Steps[0].ExpectedResult },
+                new { id = (int?)edited.Steps[2].Id, action = edited.Steps[2].Action,
+                    expectedResult = edited.Steps[2].ExpectedResult }
+            }
+        });
+        Assert.Equal(HttpStatusCode.OK, remove.StatusCode);
+        Assert.Equal(2, (await remove.Content.ReadFromJsonAsync<TestCaseResponse>())!.Steps.Count);
+        var history = (await client.GetFromJsonAsync<List<ManualRunResponse>>(runsUrl))!;
+        Assert.Equal(new[] { "Open login", "Submit credentials" },
+            Assert.Single(history).Steps.Select(step => step.Action));
+    }
+
+    [Fact]
     public async Task ManualRun_RequiresEveryStep_AndPreservesHistoryWhenDefinitionChanges()
     {
         await using var factory = new ApiFactory();
@@ -246,6 +530,15 @@ public class CreationApiTests
         var createdResponse = await client.PostAsJsonAsync("/api/testcases", request);
         var testCase = (await createdResponse.Content.ReadFromJsonAsync<TestCaseResponse>())!;
         var runsUrl = $"/api/testcases/{testCase.Id}/runs";
+
+        var draftRun = await client.PostAsJsonAsync(runsUrl, new
+        {
+            steps = testCase.Steps.Select(step => new { stepId = step.Id, outcome = "Passed" }).ToArray()
+        });
+        Assert.Equal(HttpStatusCode.Conflict, draftRun.StatusCode);
+        Assert.Empty((await client.GetFromJsonAsync<List<ManualRunResponse>>(runsUrl))!);
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await client.PatchAsJsonAsync($"/api/testcases/{testCase.Id}/status", new { status = "Ready" })).StatusCode);
 
         var incomplete = await client.PostAsJsonAsync(runsUrl, new
         {
@@ -280,6 +573,31 @@ public class CreationApiTests
         Assert.True(saved.Steps[1].CanReplicate);
         Assert.False(saved.Steps[1].OnlyUserAffected);
 
+        var unknownAnswers = await client.PostAsJsonAsync(runsUrl, new
+        {
+            steps = new object[]
+            {
+                new { stepId = testCase.Steps[0].Id, outcome = "Passed" },
+                new { stepId = testCase.Steps[1].Id, outcome = "Failed", actualResult = "Intermittent error",
+                    canReplicateUnknown = true, onlyUserAffectedUnknown = true }
+            }
+        });
+        Assert.Equal(HttpStatusCode.Created, unknownAnswers.StatusCode);
+        var unknownRun = (await unknownAnswers.Content.ReadFromJsonAsync<ManualRunResponse>())!;
+        Assert.Null(unknownRun.Steps[1].CanReplicate);
+        Assert.Null(unknownRun.Steps[1].OnlyUserAffected);
+
+        var conflictingAnswer = await client.PostAsJsonAsync(runsUrl, new
+        {
+            steps = new object[]
+            {
+                new { stepId = testCase.Steps[0].Id, outcome = "Passed" },
+                new { stepId = testCase.Steps[1].Id, outcome = "Failed", actualResult = "Error",
+                    canReplicate = true, canReplicateUnknown = true, onlyUserAffected = false }
+            }
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, conflictingAnswer.StatusCode);
+
         var remove = await client.DeleteAsync($"/api/testcases/{testCase.Id}/steps/{testCase.Steps[0].Id}");
         Assert.Equal(HttpStatusCode.NoContent, remove.StatusCode);
         var changedCase = await client.GetFromJsonAsync<TestCaseResponse>($"/api/testcases/{testCase.Id}");
@@ -288,10 +606,10 @@ public class CreationApiTests
 
         var history = await client.GetFromJsonAsync<List<ManualRunResponse>>(runsUrl);
         Assert.NotNull(history);
-        Assert.Single(history);
-        Assert.Equal(2, history[0].Steps.Count);
-        Assert.Equal("Open login", history[0].Steps[0].Action);
-        Assert.Equal("An error page appeared", history[0].Steps[1].ActualResult);
+        Assert.Equal(2, history.Count);
+        Assert.All(history, run => Assert.Equal(2, run.Steps.Count));
+        Assert.All(history, run => Assert.Equal("Open login", run.Steps[0].Action));
+        Assert.Contains(history, run => run.Steps[1].ActualResult == "An error page appeared");
 
         Assert.Equal(HttpStatusCode.Conflict,
             (await client.DeleteAsync($"/api/testcases/{testCase.Id}/steps/{changedCase.Steps[0].Id}")).StatusCode);

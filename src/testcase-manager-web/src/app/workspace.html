@@ -7,15 +7,15 @@
   @if (!selectedProjectId()) {
     <button class="primary" (click)="open('project')">+ New project</button>
   } @else if (selectedProject(); as project) {
-    <button type="button" class="danger" [disabled]="project.moduleCount > 0 || deletingKind() !== null"
-      (click)="deleteProject(project)">
-      {{ deletingKind() === 'project' && deletingId() === project.id ? 'Deleting…' : 'Delete project' }}
-    </button>
+    <div class="heading-action">
+      <button type="button" class="danger" [disabled]="project.moduleCount > 0 || deletingKind() !== null"
+        (click)="deleteProject(project)">
+        {{ deletingKind() === 'project' && deletingId() === project.id ? 'Deleting…' : 'Delete project' }}
+      </button>
+      @if (project.moduleCount > 0) { <small>Delete its modules first.</small> }
+    </div>
   }
 </header>
-@if (notice()) {
-  <p class="notice" role="status">{{ notice() }}</p>
-}
 @if (error()) {
   <div class="error" role="alert">
     {{ error() }} <button (click)="reload()">Retry workspace</button>
@@ -47,7 +47,9 @@
                 </svg>
               </span>
               <strong>{{ project.name }}</strong>
-              <span class="muted">{{ project.moduleCount }} modules · {{ project.testCaseCount }} test cases</span>
+              <span class="muted">{{ project.moduleCount }} modules · {{ project.testCaseCount }} active cases
+                @if (project.archivedCaseCount) { · {{ project.archivedCaseCount }} archived }
+              </span>
               <span class="link-text">Open project →</span>
             </a>
           }
@@ -56,6 +58,34 @@
     </section>
   }
   @if (selectedProject(); as project) {
+    <section class="panel project-overview" aria-labelledby="overview-heading">
+      <div class="section-heading">
+        <div>
+          <h2 id="overview-heading">Project snapshot</h2>
+          <p class="muted">Case status and the latest saved run for each case, across all modules.</p>
+        </div>
+      </div>
+      @if (overviewLoading() && !projectOverview()) {
+        <p role="status">Loading project snapshot…</p>
+      } @else if (overviewError()) {
+        <p class="error" role="alert">{{ overviewError() }}</p>
+        <button type="button" (click)="loadOverview(project.id)">Retry snapshot</button>
+      } @else if (projectOverview(); as overview) {
+        <div class="overview-grid">
+          <div class="overview-stat"><strong>{{ overview.totalCases }}</strong><span>Total cases</span></div>
+          <div class="overview-stat"><strong>{{ overview.draft }}</strong><span>Draft</span></div>
+          <div class="overview-stat"><strong>{{ overview.ready }}</strong><span>Ready</span></div>
+          <div class="overview-stat"><strong>{{ overview.complete }}</strong><span>Complete</span></div>
+          <div class="overview-stat outcome-passed"><strong>{{ overview.latestPassed }}</strong><span>Latest run passed</span></div>
+          <div class="overview-stat outcome-failed"><strong>{{ overview.latestFailed }}</strong><span>Latest run failed</span></div>
+        </div>
+        <p class="overview-footnote">{{ overview.neverRun }} case(s) have no saved run.
+          @if (overview.archived) {
+            <a routerLink="/archive" [queryParams]="{ projectId: project.id }">View {{ overview.archived }} archived case(s)</a>.
+          }
+        </p>
+      }
+    </section>
     <section class="panel" aria-labelledby="modules-heading">
       <div class="section-heading">
         <div>
@@ -71,16 +101,28 @@
       } @else {
         <div class="module-list">
           @for (module of modules(); track module.id) {
-            <div class="module-row">
-              <div>
-                <strong>{{ module.name }}</strong
-                ><small>{{ module.testCaseCount }} test cases</small>
+            <div class="module-row" [class.active-module]="selectedModuleId() === module.id">
+              <div class="module-identity">
+                <span class="module-glyph" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" />
+                  </svg>
+                </span>
+                <div>
+                  <a class="module-link" [routerLink]="projectPath(project)" [queryParams]="{ module: module.id }">{{ module.name }}</a>
+                  <small>{{ module.testCaseCount }} active cases
+                    @if (module.archivedCaseCount) { · {{ module.archivedCaseCount }} archived }
+                    · View module cases</small>
+                  @if (module.testCaseCount + module.archivedCaseCount > 0) {
+                    <small class="disabled-explanation">Remove or relocate all cases before deleting this module.</small>
+                  }
+                </div>
               </div>
 
               <button
                   type="button"
                   class="danger"
-                  [disabled]="module.testCaseCount > 0 || deletingKind() !== null"
+                  [disabled]="module.testCaseCount + module.archivedCaseCount > 0 || deletingKind() !== null"
                   (click)="deleteModule(module)">
                   {{
                     deletingKind() === 'module' && deletingId() === module.id
@@ -98,27 +140,69 @@
     <div class="section-heading">
       <div>
         <h2 id="cases-heading">
-          {{ selectedProjectId() ? 'Project test cases' : 'Recent test cases' }}
+          {{ selectedModule() ? selectedModule()!.name + ' test cases' : selectedProjectId() ? 'Project test cases' : isRecentView() ? 'Recent test cases' : 'Search test cases' }}
         </h2>
-        <p class="muted">Open a case to read its instructions and expected results.</p>
+        <p class="muted">Find a case, review its steps, and record a manual run.</p>
       </div>
-      <button
-        class="primary"
-        [disabled]="!selectedProjectId() || !modules().length || moduleLoading()"
-        (click)="open('case')"
-      >
-        + New test case
-      </button>
+      <div class="heading-action">
+        <button
+          class="primary"
+          [disabled]="!selectedProjectId() || !modules().length || moduleLoading()"
+          (click)="open('case')"
+        >
+          + New test case
+        </button>
+        @if (!selectedProjectId()) { <small>Open a project to add a case.</small> }
+        @else if (!moduleLoading() && !modules().length) { <small>Create a module first.</small> }
+      </div>
     </div>
-    @if (!selectedProjectId()) {
-      <p class="hint">Select a project above to add modules and test cases.</p>
-    }
-    @if (!visibleCases().length) {
+    <div class="case-filters" role="search" aria-label="Find test cases">
+      <label class="search-field">Search cases
+        <input type="search" placeholder="Search title or description" [value]="searchTerm()"
+          (input)="onSearchInput($any($event.target).value)" />
+      </label>
+      @if (selectedProjectId()) {
+        <label>Module
+          <select [value]="selectedModuleId() ?? ''" (change)="chooseModule($any($event.target).value)">
+            <option value="" [selected]="selectedModuleId() === null">All modules</option>
+            @for (module of modules(); track module.id) {
+              <option [value]="module.id" [selected]="selectedModuleId() === module.id">{{ module.name }}</option>
+            }
+          </select>
+        </label>
+      }
+      <label>Status
+        <select [value]="statusFilter()" (change)="setFilter('status', $any($event.target).value)">
+          <option value="">All statuses</option><option>Draft</option><option>Ready</option><option>Complete</option>
+        </select>
+      </label>
+      <label>Priority
+        <select [value]="priorityFilter()" (change)="setFilter('priority', $any($event.target).value)">
+          <option value="">All priorities</option><option>Trivial</option><option>Minor</option><option>Major</option><option>Critical</option>
+        </select>
+      </label>
+      <label>Sort by
+        <select [value]="sortOrder()" (change)="setFilter('sort', $any($event.target).value)">
+          <option value="updated-desc">Recently updated</option>
+          <option value="updated-asc">Oldest updated</option>
+          <option value="title-asc">Title A–Z</option>
+          <option value="title-desc">Title Z–A</option>
+          <option value="id-asc">Oldest created</option>
+        </select>
+      </label>
+      @if (searchTerm() || statusFilter() || priorityFilter() || selectedModuleId() || sortOrder() !== 'updated-desc') {
+        <button type="button" class="filter-reset" (click)="clearFilters()">Clear filters</button>
+      }
+    </div>
+    @if (caseLoading()) {
+      <p role="status">Finding test cases…</p>
+    } @else if (!visibleCases().length) {
       <div class="empty">
-        <h3>No test cases yet</h3>
-        <p>Your saved cases will appear here.</p>
+        <h3>{{ searchTerm() || statusFilter() || priorityFilter() || selectedModuleId() ? 'No matching test cases' : 'No test cases yet' }}</h3>
+        <p>{{ searchTerm() || statusFilter() || priorityFilter() || selectedModuleId() ? 'Try a different search or filter.' : 'Your saved cases will appear here.' }}</p>
       </div>
     } @else {
+      <p class="mobile-table-hint">Swipe sideways to see all case columns →</p>
       <div class="table-wrap">
         <table>
           <thead>
@@ -127,8 +211,9 @@
               <th>Test case</th>
               <th>Project / Module</th>
               <th>Status</th>
+              <th>Latest run</th>
               <th>Updated</th>
-              @if (selectedProjectId()) { <th>Open</th> }
+              @if (selectedProjectId()) { <th>Edit</th><th>Archive</th> }
             </tr>
           </thead>
           <tbody>
@@ -136,7 +221,12 @@
               <tr>
                 <td>TC-{{ item.id.toString().padStart(3, '0') }}</td>
                 <td>
-                  <a [routerLink]="casePath(item)">{{ item.title }}</a>
+                  <a class="case-link" [routerLink]="casePath(item)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <rect x="4" y="3" width="16" height="18" rx="2" /><path d="m8 9 1.5 1.5L12 8M8 15h8" />
+                    </svg>
+                    {{ item.title }}
+                  </a>
                 </td>
                 <td>
                   {{ item.projectName }}<small>{{ item.moduleName }}</small>
@@ -146,21 +236,51 @@
                     item.status
                   }}</span>
                 </td>
+                <td>
+                  @if (item.latestRunResult) {
+                    <span class="result-pill latest-result" [class.failed]="item.latestRunResult === 'Failed'">{{ item.latestRunResult }}</span>
+                    <small>{{ item.latestRunAt | date: 'mediumDate' }} · {{ item.runCount }} {{ item.runCount === 1 ? 'run' : 'runs' }}</small>
+                  } @else {
+                    <span class="muted">Not run</span><small>0 runs</small>
+                  }
+                </td>
                 <td>{{ item.updatedAt | date: 'mediumDate' }}</td>
                 @if (selectedProjectId()) {
-                  <td>
+                  <td class="case-action-cell">
                     <a class="icon-action icon-edit" [routerLink]="casePath(item)"
-                      [attr.aria-label]="'Open test case ' + item.title" title="Open test case">
+                      [attr.aria-label]="'Edit test case ' + item.title" title="Edit test case">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <path d="M12 20h9M4 16l11-11 4 4-11 11-5 1 1-5Zm9-9 4 4" />
                       </svg>
                     </a>
+                  </td>
+                  <td class="case-action-cell">
+                    <button type="button" class="icon-action icon-archive"
+                      [attr.aria-label]="'Archive test case ' + item.title" title="Archive test case"
+                      [disabled]="archivingCaseId() !== null" (click)="archiveCase(item)">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <rect x="3" y="4" width="18" height="4" rx="1" />
+                        <path d="M5 8v12h14V8M10 12h4" />
+                      </svg>
+                    </button>
                   </td>
                 }
               </tr>
             }
           </tbody>
         </table>
+      </div>
+    }
+    @if (totalCases() > 0 && isRecentView()) {
+      <p class="hint">Latest {{ visibleCases().length }} of {{ totalCases() }} test cases.</p>
+    } @else if (totalCases() > 0) {
+      <div class="case-pagination">
+        <span class="muted">Showing {{ (page() - 1) * pageSize + 1 }}–{{ page() * pageSize < totalCases() ? page() * pageSize : totalCases() }} of {{ totalCases() }} cases</span>
+        <div class="pagination-actions">
+          <button type="button" [disabled]="page() === 1 || caseLoading()" (click)="goToPage(page() - 1)">Previous</button>
+          <span aria-live="polite">Page {{ page() }} of {{ totalPages() }}</span>
+          <button type="button" [disabled]="page() === totalPages() || caseLoading()" (click)="goToPage(page() + 1)">Next</button>
+        </div>
       </div>
     }
   </section>

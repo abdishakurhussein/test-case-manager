@@ -52,6 +52,47 @@ public class CreateTestCaseRequest : IValidatableObject
     }
 }
 
+public class UpdateTestStepRequest
+{
+    // Existing steps retain their ID; omit it for a new step.
+    public int? Id { get; set; }
+    [Required, StringLength(2000)]
+    public string Action { get; set; } = string.Empty;
+    [Required, StringLength(2000)]
+    public string ExpectedResult { get; set; } = string.Empty;
+}
+
+public class UpdateTestCaseRequest : IValidatableObject
+{
+    [Required, StringLength(200)]
+    public string Title { get; set; } = string.Empty;
+    [StringLength(4000)]
+    public string? Description { get; set; }
+    [StringLength(4000)]
+    public string? Preconditions { get; set; }
+    [EnumDataType(typeof(TestPriority))]
+    public TestPriority Priority { get; set; }
+    [Required]
+    public DateTime? ExpectedUpdatedAt { get; set; }
+    [Required, MinLength(1), MaxLength(100)]
+    public List<UpdateTestStepRequest?> Steps { get; set; } = new();
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        if (string.IsNullOrWhiteSpace(Title))
+            yield return new ValidationResult("A title is required.", new[] { nameof(Title) });
+        if (Steps is null) yield break;
+        if (Steps.Any(step => step is null || string.IsNullOrWhiteSpace(step.Action) ||
+            string.IsNullOrWhiteSpace(step.ExpectedResult) || step.Action.Length > 2000 ||
+            step.ExpectedResult.Length > 2000))
+            yield return new ValidationResult("Each step needs an action and expected result of up to 2,000 characters.",
+                new[] { nameof(Steps) });
+        var ids = Steps.Where(step => step?.Id is not null).Select(step => step!.Id!.Value).ToList();
+        if (ids.Any(id => id <= 0) || ids.Count != ids.Distinct().Count())
+            yield return new ValidationResult("Existing step IDs must be positive and unique.", new[] { nameof(Steps) });
+    }
+}
+
 public class UpdateTestCaseStatusRequest : IValidatableObject
 {
     [Required]

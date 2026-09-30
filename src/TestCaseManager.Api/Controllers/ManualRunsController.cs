@@ -38,8 +38,8 @@ public class ManualRunsController(AppDbContext db) : ControllerBase
         var item = await db.TestCases.AsNoTracking().Include(item => item.Steps)
             .SingleOrDefaultAsync(item => item.Id == testCaseId, token);
         if (item is null) return NotFound();
-        if (item.Status is TestCaseStatus.Archived or TestCaseStatus.Complete)
-            return Conflict(new ProblemDetails { Detail = "Archived or completed test cases cannot be run." });
+        if (item.Status != TestCaseStatus.Ready)
+            return Conflict(new ProblemDetails { Detail = "Mark this test case Ready before saving a manual run." });
 
         var steps = item.Steps.OrderBy(step => step.Position).ToList();
         if (request.Steps is null || request.Steps.Any(step => step is null))
@@ -52,8 +52,9 @@ public class ManualRunsController(AppDbContext db) : ControllerBase
 
         if (submitted.Any(step => step.Outcome == "Failed" &&
             (string.IsNullOrWhiteSpace(step.ActualResult) ||
-             step.CanReplicate is null || step.OnlyUserAffected is null)))
-            return BadRequest(new ProblemDetails { Detail = "Failed steps need an actual result and both Yes/No answers." });
+             (step.CanReplicate is null) != step.CanReplicateUnknown ||
+             (step.OnlyUserAffected is null) != step.OnlyUserAffectedUnknown)))
+            return BadRequest(new ProblemDetails { Detail = "Failed steps need an actual result and an explicit Yes, No or Unknown answer to both questions." });
 
         var outcomes = submitted.ToDictionary(step => step.StepId);
         var run = new ManualRun

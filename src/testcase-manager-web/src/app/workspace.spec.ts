@@ -9,6 +9,7 @@ describe('Workspace forms', () => {
   const api = {
     projects: vi.fn(() => of([])),
     cases: vi.fn(() => of([])),
+    searchCases: vi.fn(() => of({ items: [], totalCount: 0, page: 1, pageSize: 10 })),
     modules: vi.fn(() => of([])),
     createCase: vi.fn(),
     createProject: vi.fn(),
@@ -16,6 +17,7 @@ describe('Workspace forms', () => {
   };
   beforeEach(async () => {
     vi.clearAllMocks();
+    api.searchCases.mockReturnValue(of({ items: [], totalCount: 0, page: 1, pageSize: 10 }));
     await TestBed.configureTestingModule({
       imports: [Workspace],
       providers: [provideRouter([]), { provide: ApiService, useValue: api }],
@@ -35,6 +37,19 @@ describe('Workspace forms', () => {
   it('shows a useful empty workspace', async () => {
     const { fixture } = await setup();
     expect(fixture.nativeElement.textContent).toContain('Create your first project');
+  });
+  it('sends status, sorting and page choices to the API', async () => {
+    api.searchCases.mockReturnValue(of({ items: [], totalCount: 25, page: 1, pageSize: 10 }));
+    const { component, fixture } = await setup();
+    component.setFilter('status', 'Ready');
+    await fixture.whenStable();
+    expect(api.searchCases).toHaveBeenCalledWith(expect.objectContaining({ status: 'Ready', page: 1 }));
+    component.setFilter('sort', 'title-asc');
+    await fixture.whenStable();
+    expect(api.searchCases).toHaveBeenCalledWith(expect.objectContaining({ sort: 'title-asc' }));
+    component.goToPage(2);
+    await fixture.whenStable();
+    expect(api.searchCases).toHaveBeenCalledWith(expect.objectContaining({ page: 2, pageSize: 10 }));
   });
   it('blocks blank case submission', async () => {
     const { component } = await setup();
