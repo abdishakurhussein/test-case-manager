@@ -1,9 +1,11 @@
-import { Component, HostListener, OnInit, computed, inject, signal } from '@angular/core';
-import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { Component, HostListener, OnInit, computed, effect, inject, signal } from '@angular/core';
+import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { ProjectNavigationService } from './project-navigation.service';
 import { projectPath } from './paths';
 import { ConfirmDialog } from './confirm-dialog';
 import { ToastService } from './toast.service';
+import { AuthService } from './auth.service';
+
 
 @Component({
   selector: 'app-root',
@@ -12,6 +14,8 @@ import { ToastService } from './toast.service';
   styleUrl: './app.css',
 })
 export class App implements OnInit {
+  readonly auth = inject(AuthService);
+  private readonly router = inject(Router);
   readonly projectPath = projectPath;
   readonly projectNavigation = inject(ProjectNavigationService);
   readonly toast = inject(ToastService);
@@ -25,7 +29,6 @@ export class App implements OnInit {
 
   ngOnInit(): void {
     this.syncViewport();
-    void this.loadProjects();
   }
 
   @HostListener('window:resize')
@@ -59,4 +62,25 @@ export class App implements OnInit {
   toggleSidebar(): void {
     this.sidebarVisible.update((visible) => !visible);
   }
+
+  constructor() {
+  effect(() => {
+    if (this.auth.canUseWorkspace()) {
+      void this.loadProjects();
+    } else {
+      this.projectNavigation.projects.set([]);
+    }
+  });
+}
+
+async logout(): Promise<void> {
+  try {
+    await this.auth.logout();
+    this.projectNavigation.projects.set([]);
+    await this.router.navigateByUrl('/login');
+  } catch {
+    this.toast.show('Could not log out. Please try again.');
+  }
+}
+
 }

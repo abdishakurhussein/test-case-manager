@@ -17,8 +17,7 @@
     </div>
     <div class="section-actions">
       @if (total() > 0) {
-        <a class="button-link" [href]="exportUrl('json')">Export JSON</a>
-        <a class="button-link" [href]="exportUrl('csv')">Export CSV ZIP</a>
+        <a class="button-link" [href]="exportUrl()">Export Excel</a>
       }
     </div>
   </div>

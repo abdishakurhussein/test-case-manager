@@ -79,7 +79,7 @@ public class ManualRunsController(AppDbContext db) : ControllerBase
     private static ManualRunResponse ToResponse(ManualRun run) => new(
         run.Id, run.TestCaseId, DateTime.SpecifyKind(run.CompletedAt, DateTimeKind.Utc), run.Result,
         run.Steps.OrderBy(step => step.Position)
-            .Select(step => new ManualStepResultResponse(step.OriginalStepId, step.Position,
+            .Select(step => new ManualStepResultResponse(step.Id, step.OriginalStepId, step.Position,
                 step.Action, step.ExpectedResult, step.Outcome, step.ActualResult,
                 step.CanReplicate, step.OnlyUserAffected)).ToList());
 }

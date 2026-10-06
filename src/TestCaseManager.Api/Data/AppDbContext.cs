@@ -4,11 +4,12 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using TestCaseManager.Api.Models;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 
 
 namespace TestCaseManager.Api.Data
 {
-    public class AppDbContext : DbContext
+    public class AppDbContext : IdentityDbContext<AppUser>
     {
         // Receives the database settings configured in Program.cs
         // Tests can supply a controllable clock; the application uses real time.
@@ -27,6 +28,7 @@ namespace TestCaseManager.Api.Data
         public DbSet<TestStep> TestSteps => Set<TestStep>();
         public DbSet<ManualRun> ManualRuns => Set<ManualRun>();
         public DbSet<ManualStepResult> ManualStepResults => Set<ManualStepResult>();
+        public DbSet<StoredAttachment> StoredAttachments => Set<StoredAttachment>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -72,6 +74,18 @@ namespace TestCaseManager.Api.Data
                 .HasOne(result => result.ManualRun)
                 .WithMany(run => run.Steps)
                 .HasForeignKey(result => result.ManualRunId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<StoredAttachment>()
+                .HasOne<Project>()
+                .WithMany()
+                .HasForeignKey(attachment => attachment.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<StoredAttachment>()
+                .HasOne<ManualStepResult>()
+                .WithMany()
+                .HasForeignKey(attachment => attachment.ManualStepResultId)
                 .OnDelete(DeleteBehavior.Cascade);
         }
 
