@@ -59,6 +59,99 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.auth-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.auth-card,
+.users-card {
+  background: #fff;
+  border: 1px solid #d9e3f1;
+  border-radius: 14px;
+  box-shadow: 0 12px 35px #142d4d12;
+  padding: 28px;
+}
+
+.auth-card {
+  width: min(100%, 420px);
+  display: grid;
+  gap: 12px;
+}
+
+.auth-logo {
+  width: 58px;
+  height: 58px;
+  object-fit: contain;
+}
+
+.auth-card label,
+.users-create-form label {
+  font-weight: 600;
+}
+
+.auth-card input,
+.users-create-form input,
+.credential-card input {
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid #bdcde2;
+  border-radius: 8px;
+}
+
+.auth-card button,
+.users-create-form button {
+  margin-top: 8px;
+}
+
+.auth-error {
+  padding: 12px;
+  border-radius: 8px;
+  background: #fff0ef;
+  color: #ad2119;
+}
+
+.users-page {
+  max-width: 900px;
+  margin: 30px auto;
+  padding: 0 20px;
+}
+
+.users-card {
+  margin-top: 20px;
+}
+
+.users-create-form {
+  display: grid;
+  gap: 10px;
+  max-width: 420px;
+}
+
+.credential-card {
+  border-color: #6ba785;
+  background: #f1fbf5;
+}
+
+.users-list {
+  display: grid;
+}
+
+.users-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-top: 1px solid #e3eaf3;
+}
+
+.users-row small {
+  display: block;
+  color: #63758e;
+}
+
 .section-actions {
   display: flex;
   align-items: center;
@@ -607,3 +700,20 @@ select.ng-invalid.ng-touched {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+.attachment-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.attachment-form label { display: grid; gap: 0.35rem; min-width: 12rem; flex: 1; }
+.attachment-form input[type="file"] { max-width: 100%; }
+.attachment-list { list-style: none; margin: 0; padding: 0; }
+.attachment-list li { display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 0.65rem 0; border-top: 1px solid #dce5f1; }
+.attachment-list .workbook-delete { margin-left: auto; }
+.evidence-gallery { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.75rem; }
+.evidence-gallery figure { margin: 0; width: 12rem; }
+.evidence-gallery img { display: block; width: 100%; height: 7rem; object-fit: cover; border-radius: 0.5rem; border: 1px solid #dce5f1; }
+.evidence-gallery figcaption { font-size: 0.82rem; line-height: 1.35; margin-top: 0.35rem; overflow-wrap: anywhere; }

@@ -113,8 +113,8 @@ export class ArchiveCases implements OnInit {
     }
   }
 
-  exportUrl(format: 'json' | 'csv'): string {
+  exportUrl(): string {
     const project = this.projectId();
-    return `/api/archive/export?format=${format}${project ? `&projectId=${project}` : ''}`;
+    return `/api/archive/excel${project ? `?projectId=${project}` : ''}`;
   }
 }

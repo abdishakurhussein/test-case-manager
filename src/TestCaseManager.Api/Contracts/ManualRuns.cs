@@ -24,7 +24,7 @@ public class SaveManualRunRequest
     public List<SaveManualStepRequest?> Steps { get; set; } = new();
 }
 
-public record ManualStepResultResponse(int OriginalStepId, int Position, string Action,
+public record ManualStepResultResponse(int Id, int OriginalStepId, int Position, string Action,
     string ExpectedResult, string Outcome, string? ActualResult,
     bool? CanReplicate, bool? OnlyUserAffected);
 

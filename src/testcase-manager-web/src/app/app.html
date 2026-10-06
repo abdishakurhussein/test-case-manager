@@ -1,5 +1,9 @@
-<div class="shell" [class.sidebar-hidden]="!sidebarVisible()">
-  <aside id="main-sidebar" class="sidebar" [hidden]="!sidebarVisible()">
+<div
+  class="shell"
+  [class.sidebar-hidden]="!sidebarVisible() || !auth.canUseWorkspace()"
+  [class.auth-layout]="!auth.canUseWorkspace()"
+>
+  @if (auth.canUseWorkspace()) { <aside id="main-sidebar" class="sidebar" [hidden]="!sidebarVisible()">
     <button type="button" class="sidebar-close" aria-label="Close navigation" (click)="toggleSidebar()">×</button>
     <a class="brand" routerLink="/" (click)="closeMobileSidebar()"
       ><img class="brand-mark" src="atcm-logo.png?v=4" alt="" /> ATCM</a
@@ -59,14 +63,15 @@
       <a routerLink="/archive" routerLinkActive="active" class="nav-link" (click)="closeMobileSidebar()">▤ &nbsp; Archive</a>
     </nav>
     <div class="local">
-      <span aria-hidden="true">●</span> Local workspace<small>Data stored on this device</small>
+      
     </div>
   </aside>
   @if (mobileViewport() && sidebarVisible()) {
     <button type="button" class="sidebar-backdrop" aria-label="Close navigation" (click)="toggleSidebar()"></button>
-  }
+  } 
+}
   <div class="content-column">
-    <div class="shell-toolbar">
+    @if (auth.canUseWorkspace()) { <div class="shell-toolbar">
       <button
         type="button"
         class="sidebar-visibility-toggle"
@@ -82,9 +87,20 @@
         {{ sidebarVisible() ? 'Hide menu' : 'Show menu' }}
       </button>
     </div>
+  }
     <main><router-outlet /></main>
   </div>
 </div>
+
+<div class="account-actions">
+  @if (auth.user()?.isAdmin) {
+    <a routerLink="/admin/users">Manage users</a>
+  }
+  <a routerLink="/change-password">Change password</a>
+  <span>{{ auth.user()?.userName }}</span>
+  <button type="button" (click)="logout()">Log out</button>
+</div>
+
 <app-confirm-dialog />
 @if (toast.message()) {
   <div class="toast" role="status" aria-live="polite">

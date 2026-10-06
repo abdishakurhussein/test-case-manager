@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using TestCaseManager.Api.Data;
 
@@ -10,9 +11,11 @@ using TestCaseManager.Api.Data;
 namespace TestCaseManager.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261001201206_AddIdentityUsers")]
+    partial class AddIdentityUsers
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.12");
@@ -321,54 +324,6 @@ namespace TestCaseManager.Api.Migrations
                     b.ToTable("Projects");
                 });
 
-            modelBuilder.Entity("TestCaseManager.Api.Models.StoredAttachment", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Caption")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ContentType")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<byte[]>("Data")
-                        .IsRequired()
-                        .HasColumnType("BLOB");
-
-                    b.Property<string>("FileName")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Kind")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<int?>("ManualStepResultId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int?>("ProjectId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime>("UploadedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("UploadedBy")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ManualStepResultId");
-
-                    b.HasIndex("ProjectId");
-
-                    b.ToTable("StoredAttachments");
-                });
-
             modelBuilder.Entity("TestCaseManager.Api.Models.TestCase", b =>
                 {
                     b.Property<int>("Id")
@@ -528,19 +483,6 @@ namespace TestCaseManager.Api.Migrations
                         .IsRequired();
 
                     b.Navigation("Project");
-                });
-
-            modelBuilder.Entity("TestCaseManager.Api.Models.StoredAttachment", b =>
-                {
-                    b.HasOne("TestCaseManager.Api.Models.ManualStepResult", null)
-                        .WithMany()
-                        .HasForeignKey("ManualStepResultId")
-                        .OnDelete(DeleteBehavior.Cascade);
-
-                    b.HasOne("TestCaseManager.Api.Models.Project", null)
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade);
                 });
 
             modelBuilder.Entity("TestCaseManager.Api.Models.TestCase", b =>

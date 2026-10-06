@@ -3,7 +3,7 @@ import { DatePipe, DOCUMENT } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { EMPTY, catchError, firstValueFrom, switchMap, tap } from 'rxjs';
-import { ApiService, ManualRun, ManualStepDecision, StepOutcome, TestCase, TestStep, UpdateCase, errorMessage } from './api.service';
+import { ApiService, ManualRun, ManualStepDecision, StepOutcome, StoredAttachment, TestCase, TestStep, UpdateCase, errorMessage } from './api.service';
 import { casePath, projectPath } from './paths';
 import { ConfirmDialogService } from './confirm-dialog.service';
 import { ToastService } from './toast.service';
@@ -35,6 +35,9 @@ export class CaseDetail {
   readonly deleteError = signal('');
   readonly removingStepId = signal<number | null>(null);
   readonly runs = signal<ManualRun[]>([]);
+  readonly evidence = signal<StoredAttachment[]>([]);
+  readonly evidenceError = signal('');
+  readonly uploadingEvidenceId = signal<number | null>(null);
   readonly runsLoading = signal(true);
   readonly newRunStarted = signal(false);
   readonly decisions = signal<Record<number, StepOutcome>>({});
@@ -148,9 +151,11 @@ export class CaseDetail {
         this.item.set(item);
         this.loading.set(false);
         this.runs.set([]);
+        this.evidence.set([]);
         this.runsLoading.set(true);
         this.newRunStarted.set(false);
         void this.loadRuns(item.id);
+        void this.loadEvidence(item.id);
 
         // Old or renamed links still work, then become the canonical readable URL.
         const canonical = this.router.serializeUrl(this.router.createUrlTree(casePath(item)));
@@ -168,6 +173,39 @@ export class CaseDetail {
       this.runError.set(errorMessage(error));
     } finally {
       if (this.item()?.id === caseId) this.runsLoading.set(false);
+    }
+  }
+
+  private async loadEvidence(caseId: number): Promise<void> {
+    try {
+      const files = await firstValueFrom(this.api.caseEvidence(caseId));
+      if (this.item()?.id === caseId) this.evidence.set(files);
+    } catch (error) {
+      if (this.item()?.id === caseId) this.evidenceError.set(errorMessage(error));
+    }
+  }
+
+  evidenceForStep(stepResultId: number): StoredAttachment[] {
+    return this.evidence().filter(file => file.stepResultId === stepResultId);
+  }
+
+  async uploadEvidence(runId: number, stepResultId: number, fileInput: HTMLInputElement,
+    captionInput: HTMLInputElement): Promise<void> {
+    const item = this.item();
+    const file = fileInput.files?.[0];
+    if (!item || !file || this.uploadingEvidenceId() !== null) return;
+    this.uploadingEvidenceId.set(stepResultId);
+    this.evidenceError.set('');
+    try {
+      await firstValueFrom(this.api.uploadEvidence(item.id, runId, stepResultId, file, captionInput.value));
+      fileInput.value = '';
+      captionInput.value = '';
+      await this.loadEvidence(item.id);
+      this.toast.show('Image evidence saved with this failed step.');
+    } catch (error) {
+      this.evidenceError.set(errorMessage(error));
+    } finally {
+      this.uploadingEvidenceId.set(null);
     }
   }
 

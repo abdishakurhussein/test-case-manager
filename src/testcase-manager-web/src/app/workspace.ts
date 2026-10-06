@@ -3,12 +3,13 @@ import { DatePipe } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { combineLatest, firstValueFrom } from 'rxjs';
-import { ApiService, CaseSummary, Module, Project, ProjectOverview, errorMessage } from './api.service';
+import { ApiService, CaseSummary, Module, Project, ProjectOverview, StoredAttachment, errorMessage } from './api.service';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ProjectNavigationService } from './project-navigation.service';
 import { casePath, idFromSegment, projectPath } from './paths';
 import { ConfirmDialogService } from './confirm-dialog.service';
 import { ToastService } from './toast.service';
+import { AuthService } from './auth.service';
 
 const requiredText = [Validators.required, Validators.pattern(/\S/)];
 
@@ -27,6 +28,7 @@ export class Workspace implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
   private readonly confirmDialog = inject(ConfirmDialogService);
   private readonly toast = inject(ToastService);
+  readonly auth = inject(AuthService);
   readonly projectNavigation = inject(ProjectNavigationService);
   @ViewChild('editor') editor!: ElementRef<HTMLDialogElement>;
   readonly projects = this.projectNavigation.projects;
@@ -44,6 +46,10 @@ export class Workspace implements OnInit {
   readonly projectOverview = signal<ProjectOverview | null>(null);
   readonly overviewLoading = signal(false);
   readonly overviewError = signal('');
+  readonly workbooks = signal<StoredAttachment[]>([]);
+  readonly workbookError = signal('');
+  readonly uploadingWorkbook = signal(false);
+  readonly deletingWorkbookId = signal<number | null>(null);
   readonly selectedProjectId = signal<number | null>(null);
   readonly selectedModuleId = signal<number | null>(null);
   readonly selectedProject = computed(() =>
@@ -135,6 +141,7 @@ export class Workspace implements OnInit {
     this.cases.set([]);
     this.totalCases.set(0);
     this.projectOverview.set(null);
+    this.workbooks.set([]);
     try {
       await this.projectNavigation.refresh();
       if (request !== this.routeRequest) return;
@@ -145,6 +152,7 @@ export class Workspace implements OnInit {
       }
 
       this.selectedProjectId.set(projectId);
+      if (projectId !== null) void this.loadWorkbooks(projectId);
       await this.selectProject(projectId);
       if (request !== this.routeRequest) return;
       if (this.error()) return;
@@ -173,6 +181,58 @@ export class Workspace implements OnInit {
       if (request === this.routeRequest) this.error.set(errorMessage(error));
     } finally {
       if (request === this.routeRequest) this.loading.set(false);
+    }
+  }
+
+  private async loadWorkbooks(projectId: number): Promise<void> {
+    this.workbookError.set('');
+    try {
+      const files = await firstValueFrom(this.api.workbooks(projectId));
+      if (this.selectedProjectId() === projectId) this.workbooks.set(files);
+    } catch (error) {
+      if (this.selectedProjectId() === projectId) this.workbookError.set(errorMessage(error));
+    }
+  }
+
+  async uploadWorkbook(fileInput: HTMLInputElement, captionInput: HTMLInputElement): Promise<void> {
+    const projectId = this.selectedProjectId();
+    const file = fileInput.files?.[0];
+    if (!projectId || !file || this.uploadingWorkbook()) return;
+    this.uploadingWorkbook.set(true);
+    this.workbookError.set('');
+    try {
+      await firstValueFrom(this.api.uploadWorkbook(projectId, file, captionInput.value));
+      fileInput.value = '';
+      captionInput.value = '';
+      await this.loadWorkbooks(projectId);
+      this.toast.show('Workbook saved as a supporting document. ATCM results were not changed.');
+    } catch (error) {
+      this.workbookError.set(errorMessage(error));
+    } finally {
+      this.uploadingWorkbook.set(false);
+    }
+  }
+
+  async deleteWorkbook(workbook: StoredAttachment): Promise<void> {
+    const projectId = this.selectedProjectId();
+    if (projectId === null || this.deletingWorkbookId() !== null) return;
+    const confirmed = await this.confirmDialog.confirm({
+      title: 'Delete workbook?',
+      message: `Permanently delete “${workbook.fileName}” from this project? This does not change test cases or saved runs and cannot be undone.`,
+      confirmLabel: 'Delete workbook',
+    });
+    if (!confirmed || this.selectedProjectId() !== projectId) return;
+
+    this.deletingWorkbookId.set(workbook.id);
+    this.workbookError.set('');
+    try {
+      await firstValueFrom(this.api.deleteWorkbook(projectId, workbook.id));
+      this.workbooks.update(items => items.filter(item => item.id !== workbook.id));
+      this.toast.show(`Workbook “${workbook.fileName}” deleted.`);
+    } catch (error) {
+      this.workbookError.set(errorMessage(error));
+    } finally {
+      this.deletingWorkbookId.set(null);
     }
   }
 

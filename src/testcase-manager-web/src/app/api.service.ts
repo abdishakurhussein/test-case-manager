@@ -105,6 +105,7 @@ export interface ManualRun {
   completedAt: string;
   result: StepOutcome;
   steps: {
+    id: number;
     originalStepId: number;
     position: number;
     action: string;
@@ -114,6 +115,16 @@ export interface ManualRun {
     canReplicate: boolean | null;
     onlyUserAffected: boolean | null;
   }[];
+}
+
+export interface StoredAttachment {
+  id: number;
+  fileName: string;
+  caption: string;
+  uploadedBy: string;
+  uploadedAt: string;
+  size: number;
+  stepResultId?: number;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -181,6 +192,37 @@ export class ApiService {
 
   saveRun(caseId: number, steps: ManualStepDecision[]) {
     return this.http.post<ManualRun>(`/api/testcases/${caseId}/runs`, { steps });
+  }
+
+  workbooks(projectId: number) {
+    return this.http.get<StoredAttachment[]>(`/api/projects/${projectId}/workbooks`);
+  }
+
+  uploadWorkbook(projectId: number, file: File, caption: string) {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('caption', caption);
+    return this.http.post<StoredAttachment>(`/api/projects/${projectId}/workbooks`, form);
+  }
+
+  deleteWorkbook(projectId: number, workbookId: number) {
+    return this.http.delete<void>(`/api/projects/${projectId}/workbooks/${workbookId}`);
+  }
+
+  evidence(caseId: number, runId: number) {
+    return this.http.get<StoredAttachment[]>(`/api/testcases/${caseId}/runs/${runId}/evidence`);
+  }
+
+  caseEvidence(caseId: number) {
+    return this.http.get<StoredAttachment[]>(`/api/testcases/${caseId}/evidence`);
+  }
+
+  uploadEvidence(caseId: number, runId: number, stepResultId: number, file: File, caption: string) {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('caption', caption);
+    return this.http.post<StoredAttachment>(
+      `/api/testcases/${caseId}/runs/${runId}/steps/${stepResultId}/evidence`, form);
   }
 
   deleteModule(id: number) {

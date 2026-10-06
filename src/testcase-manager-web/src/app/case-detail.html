@@ -177,6 +177,28 @@
                     <p class="preserve">{{ step.actualResult }}</p>
                     <span>Can this issue be replicated? {{ step.canReplicate === true ? 'Yes' : step.canReplicate === false ? 'No' : 'Unknown' }}</span><br />
                     <span>Are you the only user affected? {{ step.onlyUserAffected === true ? 'Yes' : step.onlyUserAffected === false ? 'No' : 'Unknown' }}</span>
+                    <div class="evidence-gallery">
+                      @for (photo of evidenceForStep(step.id); track photo.id) {
+                        <figure>
+                          <a [href]="'/api/attachments/' + photo.id" target="_blank" rel="noopener" [attr.aria-label]="'Open evidence ' + photo.fileName">
+                            <img [src]="'/api/attachments/' + photo.id" [alt]="photo.caption || photo.fileName" loading="lazy" />
+                          </a>
+                          <figcaption>{{ photo.caption || photo.fileName }} · {{ photo.uploadedBy }}</figcaption>
+                        </figure>
+                      }
+                    </div>
+                    <div class="attachment-form">
+                      <label>Attach image evidence
+                        <input #evidenceFile type="file" accept="image/png,image/jpeg,image/webp" />
+                      </label>
+                      <label>Caption (optional)
+                        <input #evidenceCaption type="text" maxlength="300" placeholder="What does the image show?" />
+                      </label>
+                      <button type="button" [disabled]="uploadingEvidenceId() !== null"
+                        (click)="uploadEvidence(run.id, step.id, evidenceFile, evidenceCaption)">
+                        {{ uploadingEvidenceId() === step.id ? 'Uploading…' : 'Add evidence' }}
+                      </button>
+                    </div>
                   </div>
                 }
               </li>
@@ -185,6 +207,7 @@
         </details>
       }
     }
+    @if (evidenceError()) { <p class="error" role="alert">{{ evidenceError() }}</p> }
   </section>
 
   @if (item.status === 'Archived') {

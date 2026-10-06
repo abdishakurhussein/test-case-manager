@@ -118,4 +118,136 @@ public class DatabasePersistenceTests
             File.Delete(databasePath + "-journal");
         }
     }
+
+    [Fact]
+public async Task Steps_InSameCase_CannotHaveDuplicatePositions()
+{
+    await using var connection = new SqliteConnection(
+        "Data Source=:memory:;Foreign Keys=True");
+    await connection.OpenAsync();
+
+    var options = new DbContextOptionsBuilder<AppDbContext>()
+        .UseSqlite(connection)
+        .Options;
+
+    await using var db = new AppDbContext(options);
+    await db.Database.MigrateAsync();
+
+    var testCase = new TestCase
+    {
+        Title = "Login test",
+        Module = new Module
+        {
+            Name = "Authentication",
+            Project = new Project { Name = "Customer Portal" }
+        },
+        Steps = new List<TestStep>
+        {
+            new()
+            {
+                Position = 1,
+                Action = "Open login page",
+                ExpectedResult = "Login form appears"
+            }
+        }
+    };
+
+    db.TestCases.Add(testCase);
+    await db.SaveChangesAsync();
+
+    db.TestSteps.Add(new TestStep
+    {
+        TestCaseId = testCase.Id,
+        Position = 1,
+        Action = "Another action at position one",
+        ExpectedResult = "This should be rejected"
+    });
+
+    await Assert.ThrowsAsync<DbUpdateException>(
+        () => db.SaveChangesAsync());
+}
+
+[Fact]
+public async Task SavedRun_KeepsOriginalStepSnapshot_WhenCaseStepChanges()
+{
+    await using var connection = new SqliteConnection(
+        "Data Source=:memory:;Foreign Keys=True");
+    await connection.OpenAsync();
+
+    var options = new DbContextOptionsBuilder<AppDbContext>()
+        .UseSqlite(connection)
+        .Options;
+
+    int caseId;
+
+    await using (var writeDb = new AppDbContext(options))
+    {
+        await writeDb.Database.MigrateAsync();
+
+        var testCase = new TestCase
+        {
+            Title = "Login test",
+            Status = TestCaseStatus.Ready,
+            Module = new Module
+            {
+                Name = "Authentication",
+                Project = new Project { Name = "Customer Portal" }
+            },
+            Steps = new List<TestStep>
+            {
+                new()
+                {
+                    Position = 1,
+                    Action = "Open the login page",
+                    ExpectedResult = "Login form appears"
+                }
+            }
+        };
+
+        writeDb.TestCases.Add(testCase);
+        await writeDb.SaveChangesAsync();
+
+        caseId = testCase.Id;
+        var step = testCase.Steps.Single();
+
+        writeDb.ManualRuns.Add(new ManualRun
+        {
+            TestCaseId = caseId,
+            CompletedAt = new DateTime(
+                2026, 1, 1, 12, 0, 0, DateTimeKind.Utc),
+            Result = "Passed",
+            Steps = new List<ManualStepResult>
+            {
+                new()
+                {
+                    OriginalStepId = step.Id,
+                    Position = step.Position,
+                    Action = step.Action,
+                    ExpectedResult = step.ExpectedResult,
+                    Outcome = "Passed"
+                }
+            }
+        });
+
+        await writeDb.SaveChangesAsync();
+
+        step.Action = "Open the updated login page";
+        await writeDb.SaveChangesAsync();
+    }
+
+    await using var readDb = new AppDbContext(options);
+
+    var savedRun = await readDb.ManualRuns
+        .AsNoTracking()
+        .Include(run => run.Steps)
+        .SingleAsync(run => run.TestCaseId == caseId);
+
+    var currentStep = await readDb.TestSteps
+        .AsNoTracking()
+        .SingleAsync(step => step.TestCaseId == caseId);
+
+    Assert.Equal("Open the login page", savedRun.Steps.Single().Action);
+    Assert.Equal("Open the updated login page", currentStep.Action);
+}
+
 }
