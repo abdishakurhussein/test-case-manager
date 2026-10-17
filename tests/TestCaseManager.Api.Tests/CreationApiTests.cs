@@ -18,7 +18,7 @@ namespace TestCaseManager.Api.Tests;
 public class CreationApiTests
 {
     // Each test gets a real HTTP test host and its own migrated SQLite file.
-    private sealed class ApiFactory : WebApplicationFactory<Program>
+    internal sealed class ApiFactory : WebApplicationFactory<Program>
     {
         private readonly string _directory = Path.Combine(Path.GetTempPath(), "tcm-http-" + Guid.NewGuid().ToString("N"));
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -85,7 +85,73 @@ public class CreationApiTests
 
             return client;
         }
-        
+        public async Task<HttpClient> OpenAsAdminAsync()
+        {
+            // Create the client and migrate its isolated test database.
+            var client = await OpenAsync();
+
+            // Add an admin user to that test database.
+            using (var scope = Services.CreateScope())
+            {
+                var users = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
+                var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+                foreach (var roleName in new[] { "Admin", "User" })
+                {
+                    if(!await roles.RoleExistsAsync(roleName))
+                    {
+                        var roleResult = await roles.CreateAsync(new IdentityRole(roleName));
+                        Assert.True(roleResult.Succeeded);
+                    }
+                }
+
+                var admin = new AppUser
+                {
+                    UserName = "project-test-admin",
+                    MustChangePassword = false
+                };
+
+                var createResult = await users.CreateAsync(admin, "TestPassword123!");
+                Assert.True(createResult.Succeeded);
+
+                var assignResult = await users.AddToRoleAsync(admin, "Admin");
+                Assert.True(assignResult.Succeeded);
+
+            }
+
+            // Get the CSRF token required for the login POST.
+            using var csrf = await client.GetAsync("/api/auth/csrf");
+            Assert.Equal(HttpStatusCode.NoContent, csrf.StatusCode);
+
+            var csrfCookie = csrf.Headers.GetValues("Set-Cookie")
+                .Single(value => value.StartsWith("XSRF-TOKEN=", StringComparison.Ordinal));
+            
+            var token = Uri.UnescapeDataString(
+                csrfCookie.Split(';')[0]["XSRF-TOKEN=".Length..]);
+
+            client.DefaultRequestHeaders.Add("X-XSRF-TOKEN", token);
+
+            // Sign in; the client retains the authentication cookie.
+            using var login = await client.PostAsJsonAsync(
+                "/api/auth/login",
+                new { userName = "project-test-admin", password = "TestPassword123!" });
+            
+            Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+
+            // Signing in changes the user identity, so get a fresh CSRF token
+            using var signedInCsrf = await client.GetAsync("/api/auth/csrf");
+            Assert.Equal(HttpStatusCode.NoContent, signedInCsrf.StatusCode);
+
+            var signedInCookie = signedInCsrf.Headers.GetValues("Set-Cookie")
+                .Single(value => value.StartsWith("XSRF-TOKEN=", StringComparison.Ordinal));
+            
+            client.DefaultRequestHeaders.Remove("X-XSRF-TOKEN");
+            client.DefaultRequestHeaders.Add(
+                "X-XSRF-TOKEN",
+                Uri.UnescapeDataString(
+                    signedInCookie.Split(';')[0]["XSRF-TOKEN=".Length..]));
+            
+            return client;
+        }
         public override async ValueTask DisposeAsync()
         {
             await base.DisposeAsync();
