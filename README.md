@@ -1,6 +1,6 @@
 # TestCaseManager
 
-A local-only manual test-case library built with Angular 21, ASP.NET Core 10 and SQLite.
+A manual test-case library built with Angular 21, ASP.NET Core 10, ASP.NET Identity and SQLite. The documented setup is for local development; shared deployment needs separate planning.
 
 ## Current local workflow
 
@@ -54,6 +54,7 @@ From the repository root, restore tools and apply the database migration:
 ```powershell
 dotnet tool restore
 dotnet ef database update --project src/TestCaseManager.Api --startup-project src/TestCaseManager.Api
+dotnet run --project src/TestCaseManager.Api -- --bootstrap-admin admin # First account only; save the displayed temporary password privately.
 dotnet run --project src/TestCaseManager.Api --launch-profile http
 ```
 
@@ -66,15 +67,14 @@ npm start
 ```
 
 Open http://localhost:4200. The frontend proxies `/api` to http://localhost:5084.
-Keep both terminals running. Stop with Ctrl+C. There is no cloud deployment or login.
+Keep both terminals running. Stop with Ctrl+C. Sign-in is required; an administrator creates user accounts. There is no cloud deployment in this repository.
 Do not expose these development servers to your network or the internet.
 
 The application database lives under `src/TestCaseManager.Api/App_Data/` and is ignored by Git.
-Migrations are committed; data files are not. The archive feature adds two columns to the existing
-database. Before updating an existing installation, stop the API and back up the entire `App_Data`
-folder, then run the migration command above. The migration keeps existing records; it does not
-archive or delete any of them. Check migration status on each installation before using its
-archive features; the isolated automated tests do not migrate the application database.
+Migrations are committed; data files are not. Before updating an existing installation,
+stop the API and back up the entire `App_Data` folder, then run the migration command above.
+Check migration status before using new features; the isolated automated tests do not migrate
+the application database.
 The optional `Storage__Directory` environment variable changes the database directory (used by tests).
 
 ## Checks
@@ -96,10 +96,10 @@ Browser tests start their own servers on ports 5186 and 4301, and use the ignore
 `.e2e-data` directory, never the application database. They leave synthetic records
 in that separate directory for inspection. Tests fail rather than reuse a server on those ports.
 Screenshots and failure traces go to the ignored `test-results` directory.
-The browser walkthrough covers desktop and mobile navigation, create/edit/run flows,
-failed-run details, completion, archive/export/restore, and deletion in reverse hierarchy.
-It uses synthetic data only; before sharing the tool, also review the generated screenshots
-and repeat the core flows with representative non-sensitive data on the intended screen sizes.
+The active browser projects cover anonymous access and user/admin permissions. See
+`src/testcase-manager-web/e2e/README.md` for the test layout and the older workflow that is
+currently excluded. Before sharing the tool, repeat core flows with representative
+non-sensitive data on the intended screen sizes.
 
 ## API
 
@@ -137,6 +137,7 @@ the paged search endpoint.
 
 ## Next checkpoints
 
-Spreadsheet import, CI, and backup/import recovery remain separate work. Authentication, shared hosting and stronger concurrency
-protection are required before a workplace rollout. No execution runner, WPF integration,
+CI, backup/recovery and shared hosting remain separate work. Authentication, workbook import
+and XLSX export are implemented locally; team-wide use still needs deployment and concurrency
+planning. No execution runner, WPF integration,
 or cloud infrastructure is included. The ATCM logo is in `src/testcase-manager-web/public/atcm-logo.png`.

@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 // Test Scenario 1: Authenticate as user
-test('authenticate as user', async ({ page }) => { 
+test('user is redirected from admin page and API returns 403', async ({ page }) => {
     
     // Test Step 1: Open /admin/users and verify that the user is not authorized to access this page
     await page.goto('/admin/users');

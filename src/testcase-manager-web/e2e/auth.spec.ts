@@ -30,7 +30,7 @@ test ('Login form is submitted with invalid credentials', async ({ page }) => {
 });
 
 // Login & Permissions Scenario 1: Signed out visitor opens /admin/users and is redirected to login page
-test('Authenticated user signs out and /admin/users redirects to login page', async ({ page }) => {
+test('signed-out visitor cannot access admin user management', async ({ page }) => {
   await page.goto('/admin/users');
   await expect(page).toHaveURL('http://localhost:4301/login'); // Login UI guard against unauthenticated access
 

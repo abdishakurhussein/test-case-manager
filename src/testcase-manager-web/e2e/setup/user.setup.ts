@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { expect, test as setup } from '@playwright/test';
 
-// Setup Scenario 1: Authenticate as user
+// Create reusable signed-in user browser state for the user test project.
 setup('authenticate as user', async ({ page }) => { 
     // Setup Step 1: Authenticate as user
     const username = process.env.ATCM_E2E_USER;

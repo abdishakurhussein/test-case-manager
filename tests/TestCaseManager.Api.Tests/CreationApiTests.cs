@@ -11,156 +11,13 @@ using TestCaseManager.Api.Contracts;
 using TestCaseManager.Api.Data;
 using Microsoft.AspNetCore.Identity;
 using TestCaseManager.Api.Models;
+using TestCaseManager.Api.Tests.TestSupport;
 
 
 namespace TestCaseManager.Api.Tests;
 
 public class CreationApiTests
 {
-    // Each test gets a real HTTP test host and its own migrated SQLite file.
-    internal sealed class ApiFactory : WebApplicationFactory<Program>
-    {
-        private readonly string _directory = Path.Combine(Path.GetTempPath(), "tcm-http-" + Guid.NewGuid().ToString("N"));
-        protected override void ConfigureWebHost(IWebHostBuilder builder)
-        {
-            builder.UseEnvironment("Development");
-            builder.UseSetting("Storage:Directory", _directory);
-        }
-        public async Task<HttpClient> OpenAsync()
-        {
-            var client = CreateClient();
-            using var scope = Services.CreateScope();
-            await scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.MigrateAsync();
-            return client;
-        }
-
-        public async Task<HttpClient> OpenAsUserAsync()
-        {
-            // Create the client and migrate its isolated test database.
-            var client = await OpenAsync();
-
-            // Add a user to that test database.
-            using (var scope = Services.CreateScope())
-            {
-                var users = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
-                var result = await users.CreateAsync(
-                    new AppUser { UserName = "project-test-user", MustChangePassword = false },
-                    "TestPassword123!");
-
-                Assert.True(result.Succeeded);
-            }
-
-            // Get the CSRF token required for the login POST.
-            using var csrf = await client.GetAsync("/api/auth/csrf");
-            Assert.Equal(HttpStatusCode.NoContent, csrf.StatusCode);
-
-            var csrfCookie = csrf.Headers.GetValues("Set-Cookie")
-                .Single(value => value.StartsWith("XSRF-TOKEN=", StringComparison.Ordinal));
-
-            var token = Uri.UnescapeDataString(
-                csrfCookie.Split(';')[0]["XSRF-TOKEN=".Length..]);
-
-            client.DefaultRequestHeaders.Add("X-XSRF-TOKEN", token);
-
-            // Sign in; the client retains the authentication cookie.
-            using var login = await client.PostAsJsonAsync(
-                "/api/auth/login",
-                new { userName = "project-test-user", password = "TestPassword123!" });
-
-            Assert.Equal(HttpStatusCode.OK, login.StatusCode);
-
-            // Signing in changes the user identity, so get a fresh CSRF token
-            // for subsequent POST requests such as creating a project.
-            using var signedInCsrf = await client.GetAsync("/api/auth/csrf");
-            Assert.Equal(HttpStatusCode.NoContent, signedInCsrf.StatusCode);
-
-            var signedInCookie = signedInCsrf.Headers.GetValues("Set-Cookie")
-                .Single(value => value.StartsWith("XSRF-TOKEN=", StringComparison.Ordinal));
-
-            client.DefaultRequestHeaders.Remove("X-XSRF-TOKEN");
-            client.DefaultRequestHeaders.Add(
-                "X-XSRF-TOKEN",
-                Uri.UnescapeDataString(
-                    signedInCookie.Split(';')[0]["XSRF-TOKEN=".Length..]));
-
-            return client;
-        }
-        public async Task<HttpClient> OpenAsAdminAsync()
-        {
-            // Create the client and migrate its isolated test database.
-            var client = await OpenAsync();
-
-            // Add an admin user to that test database.
-            using (var scope = Services.CreateScope())
-            {
-                var users = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
-                var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
-                foreach (var roleName in new[] { "Admin", "User" })
-                {
-                    if(!await roles.RoleExistsAsync(roleName))
-                    {
-                        var roleResult = await roles.CreateAsync(new IdentityRole(roleName));
-                        Assert.True(roleResult.Succeeded);
-                    }
-                }
-
-                var admin = new AppUser
-                {
-                    UserName = "project-test-admin",
-                    MustChangePassword = false
-                };
-
-                var createResult = await users.CreateAsync(admin, "TestPassword123!");
-                Assert.True(createResult.Succeeded);
-
-                var assignResult = await users.AddToRoleAsync(admin, "Admin");
-                Assert.True(assignResult.Succeeded);
-
-            }
-
-            // Get the CSRF token required for the login POST.
-            using var csrf = await client.GetAsync("/api/auth/csrf");
-            Assert.Equal(HttpStatusCode.NoContent, csrf.StatusCode);
-
-            var csrfCookie = csrf.Headers.GetValues("Set-Cookie")
-                .Single(value => value.StartsWith("XSRF-TOKEN=", StringComparison.Ordinal));
-            
-            var token = Uri.UnescapeDataString(
-                csrfCookie.Split(';')[0]["XSRF-TOKEN=".Length..]);
-
-            client.DefaultRequestHeaders.Add("X-XSRF-TOKEN", token);
-
-            // Sign in; the client retains the authentication cookie.
-            using var login = await client.PostAsJsonAsync(
-                "/api/auth/login",
-                new { userName = "project-test-admin", password = "TestPassword123!" });
-            
-            Assert.Equal(HttpStatusCode.OK, login.StatusCode);
-
-            // Signing in changes the user identity, so get a fresh CSRF token
-            using var signedInCsrf = await client.GetAsync("/api/auth/csrf");
-            Assert.Equal(HttpStatusCode.NoContent, signedInCsrf.StatusCode);
-
-            var signedInCookie = signedInCsrf.Headers.GetValues("Set-Cookie")
-                .Single(value => value.StartsWith("XSRF-TOKEN=", StringComparison.Ordinal));
-            
-            client.DefaultRequestHeaders.Remove("X-XSRF-TOKEN");
-            client.DefaultRequestHeaders.Add(
-                "X-XSRF-TOKEN",
-                Uri.UnescapeDataString(
-                    signedInCookie.Split(';')[0]["XSRF-TOKEN=".Length..]));
-            
-            return client;
-        }
-        public override async ValueTask DisposeAsync()
-        {
-            await base.DisposeAsync();
-            if (!Directory.Exists(_directory)) return;
-            foreach (var file in Directory.GetFiles(_directory)) File.Delete(file);
-            Directory.Delete(_directory);
-        }
-    }
-
     private static async Task<ModuleResponse> CreateModuleAsync(HttpClient client)
     {
         var response = await client.PostAsJsonAsync("/api/projects", new { name = "Portal", description = "Synthetic test project" });
@@ -184,7 +41,7 @@ public class CreationApiTests
     [Fact]
     public async Task CreateCase_ReturnsLocation_AndCanBeReadByAnotherRequest()
     {
-        await using var factory = new ApiFactory();
+        await using var factory = new ApiTestFactory();
         using var client = await factory.OpenAsUserAsync();
         var module = await CreateModuleAsync(client);
         var response = await client.PostAsJsonAsync("/api/testcases", ValidRequest(module.Id));
@@ -212,7 +69,7 @@ public class CreationApiTests
     [Fact]
     public async Task SearchCases_FiltersSortsAndPagesWithoutReturningEveryCase()
     {
-        await using var factory = new ApiFactory();
+        await using var factory = new ApiTestFactory();
         using var client = await factory.OpenAsUserAsync();
         var module = await CreateModuleAsync(client);
         foreach (var (title, status, priority) in new[]
@@ -253,7 +110,7 @@ public class CreationApiTests
     [Fact]
     public async Task ProjectOverview_AndCaseRows_SeparateLifecycleFromLatestRun()
     {
-        await using var factory = new ApiFactory();
+        await using var factory = new ApiTestFactory();
         using var client = await factory.OpenAsUserAsync();
         var module = await CreateModuleAsync(client);
         var caseIds = new List<TestCaseResponse>();
@@ -322,7 +179,7 @@ public class CreationApiTests
     [Fact]
     public async Task Archive_ExportsFullHistory_AndRestoresPreviousStatus()
     {
-        await using var factory = new ApiFactory();
+        await using var factory = new ApiTestFactory();
         using var client = await factory.OpenAsUserAsync();
         var module = await CreateModuleAsync(client);
         var request = ValidRequest(module.Id);
@@ -433,7 +290,7 @@ public class CreationApiTests
     [InlineData("complete")]
     public async Task InvalidCase_Returns400_WithoutSavingPartialRecords(string scenario)
     {
-        await using var factory = new ApiFactory();
+        await using var factory = new ApiTestFactory();
         using var client = await factory.OpenAsUserAsync();
         var module = await CreateModuleAsync(client);
         var request = ValidRequest(module.Id);
@@ -463,7 +320,7 @@ public class CreationApiTests
     [Fact]
     public async Task MissingParentsAndCases_Return404()
     {
-        await using var factory = new ApiFactory();
+        await using var factory = new ApiTestFactory();
         using var client = await factory.OpenAsUserAsync();
         Assert.Equal(HttpStatusCode.NotFound, (await client.PostAsJsonAsync("/api/modules", new { projectId = 999, name = "Missing" })).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await client.PostAsJsonAsync("/api/testcases", ValidRequest(999))).StatusCode);
@@ -477,7 +334,7 @@ public class CreationApiTests
     [InlineData("   ")]
     public async Task Project_RejectsEmptyNames(string name)
     {
-        await using var factory = new ApiFactory();
+        await using var factory = new ApiTestFactory();
         using var client = await factory.OpenAsUserAsync();
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/projects", new { name })).StatusCode);
     }
@@ -485,7 +342,7 @@ public class CreationApiTests
     [Fact]
     public async Task Complete_RequiresReadyAndSavedRun_ThenLocksCaseExceptDeletion()
     {
-        await using var factory = new ApiFactory();
+        await using var factory = new ApiTestFactory();
         using var client = await factory.OpenAsUserAsync();
         var module = await CreateModuleAsync(client);
         var request = ValidRequest(module.Id);
@@ -541,7 +398,7 @@ public class CreationApiTests
     [Fact]
     public async Task AddStep_AppendsToCase_WithoutChangingSavedRuns()
     {
-        await using var factory = new ApiFactory();
+        await using var factory = new ApiTestFactory();
         using var client = await factory.OpenAsUserAsync();
         var module = await CreateModuleAsync(client);
         var created = await client.PostAsJsonAsync("/api/testcases", ValidRequest(module.Id));
@@ -579,7 +436,7 @@ public class CreationApiTests
     [Fact]
     public async Task UpdateCase_EditsAndReordersSteps_WithoutChangingRunHistory()
     {
-        await using var factory = new ApiFactory();
+        await using var factory = new ApiTestFactory();
         using var client = await factory.OpenAsUserAsync();
         var module = await CreateModuleAsync(client);
         var testCase = (await (await client.PostAsJsonAsync("/api/testcases", ValidRequest(module.Id)))
@@ -644,7 +501,7 @@ public class CreationApiTests
     [Fact]
     public async Task ManualRun_RequiresEveryStep_AndPreservesHistoryWhenDefinitionChanges()
     {
-        await using var factory = new ApiFactory();
+        await using var factory = new ApiTestFactory();
         using var client = await factory.OpenAsUserAsync();
         var module = await CreateModuleAsync(client);
         var request = ValidRequest(module.Id);
@@ -750,7 +607,7 @@ public class CreationApiTests
     [Fact]
     public async Task Projects_AnonymousRequest_ReturnsUnauthorized()
     {
-        await using var factory = new ApiFactory();
+        await using var factory = new ApiTestFactory();
         using var client = await factory.OpenAsync();
         using var response = await client.GetAsync("/api/projects");
 
@@ -761,7 +618,7 @@ public class CreationApiTests
     public async Task InvalidLogin_ReturnsUnauthorised()
     {
         // Start the API with an isolated test database and create an HTTP client.
-        await using var factory = new ApiFactory();
+        await using var factory = new ApiTestFactory();
         using var client = await factory.OpenAsUserAsync();
 
         // Request a CSRF token before sending a POST request.
@@ -801,7 +658,7 @@ public class CreationApiTests
     {
         
         // Each factory uses its own test database.
-        await using var factory = new ApiFactory();
+        await using var factory = new ApiTestFactory();
 
         // This client has signed in as the test user.
         using var client = await factory.OpenAsUserAsync();

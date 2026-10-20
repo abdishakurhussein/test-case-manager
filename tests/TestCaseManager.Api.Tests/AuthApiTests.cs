@@ -12,6 +12,7 @@ using TestCaseManager.Api.Data;
 using Microsoft.AspNetCore.Identity;
 using TestCaseManager.Api.Models;
 using TestCaseManager.Api.Controllers;
+using TestCaseManager.Api.Tests.TestSupport;
 using Microsoft.AspNetCore.Mvc;
 using Xunit.Abstractions;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -20,17 +21,15 @@ using System.Security.Cryptography.X509Certificates;
 
 namespace TestCaseManager.Api.Tests;
 
-public class AuthApiTests : IClassFixture<WebApplicationFactory<Program>>
+public class AuthApiTests
 {
     private const string TemporaryTestUserName = "temporary-test-user";
-    private readonly WebApplicationFactory<Program> _factory;
 
     //HELPERS
 
     private readonly ITestOutputHelper _output;
-    public AuthApiTests(WebApplicationFactory<Program> factory, ITestOutputHelper output)
+    public AuthApiTests(ITestOutputHelper output)
     {
-        _factory = factory;
         _output = output;
     }
 
@@ -38,70 +37,13 @@ public class AuthApiTests : IClassFixture<WebApplicationFactory<Program>>
 
     
     
-    private static async Task<TemporaryCredentialResponse> CreateTemporaryUserAsync(HttpClient client, string userName)
-    {
-        // Confirm this client really is signed in as an admin.
-        using var me = await client.GetAsync("/api/auth/me");
-        Assert.Equal(HttpStatusCode.OK, me.StatusCode);
-
-        // CHANGED: removed adminId/adminPasswordHash; this test never used them.
-        using var response = await client.PostAsJsonAsync(
-            "/api/admin/users",
-            new { userName });
-
-        // CHANGED: the controller returns Ok(...), which is HTTP 200.
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-
-        // CHANGED: check the details returned by the create endpoint.
-        var created =
-            await response.Content.ReadFromJsonAsync<TemporaryCredentialResponse>();
-        Assert.NotNull(created);
-        Assert.Equal(userName, created.UserName);
-        Assert.False(string.IsNullOrWhiteSpace(created.TemporaryPassword));
-
-        return created;
-    }
-
-    public static async Task<AuthUserResponse>LoginRequestAsNewTempUser(HttpClient client2, string userName, string password)
-    {
-         // Get a CSRF token for the new, still-anonymous client.
-        using var csrf = await client2.GetAsync("/api/auth/csrf");
-        Assert.Equal(HttpStatusCode.NoContent, csrf.StatusCode);
-
-        var csrfCookie = csrf.Headers.GetValues("Set-Cookie")
-            .Single(value => value.StartsWith("XSRF-TOKEN=", StringComparison.Ordinal));
-
-        var token = Uri.UnescapeDataString(
-            csrfCookie.Split(';')[0]["XSRF-TOKEN=".Length..]);
-
-        client2.DefaultRequestHeaders.Add("X-XSRF-TOKEN", token);
-
-        using var login = await client2.PostAsJsonAsync(
-            "/api/auth/login",
-            new
-            {
-                userName,
-                password 
-            });
-
-        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
-
-        var loggedSuccessfully = await login.Content.ReadFromJsonAsync<AuthUserResponse>();
-        Assert.NotNull(loggedSuccessfully);
-        Assert.Equal(userName, loggedSuccessfully.UserName);
-        
-        return loggedSuccessfully;
-    }
-
-
-
-    
     //Login & Permissions Scenario 2 - Signed-out visitor requests the /api/auth/me endpoint and receives a 401 Unauthorized response.
     [Fact]
     public async Task GetMe_WithoutLogin_ReturnsUnauthorized()
     {
         // Arrange
-        var client = _factory.CreateClient();
+        await using var factory = new ApiTestFactory();
+        using var client = await factory.OpenAsync();
 
         // Act
         var response = await client.GetAsync("/api/auth/me");
@@ -115,7 +57,7 @@ public class AuthApiTests : IClassFixture<WebApplicationFactory<Program>>
     public async Task CreateUser_AsSignedInNonAdmin_ReturnsForbidden()
     {
         // This factory creates a separate temporary database.
-        await using var factory = new CreationApiTests.ApiFactory();
+        await using var factory = new ApiTestFactory();
 
         // This helper creates a non-admin account, logs it in,
         // and prepares the CSRF header for POST requests.
@@ -144,7 +86,7 @@ public class AuthApiTests : IClassFixture<WebApplicationFactory<Program>>
     public async Task ResetPassword_AsSignedInNonAdmin_ReturnsForbidden()
     {
 
-        await using var factory = new CreationApiTests.ApiFactory();
+        await using var factory = new ApiTestFactory();
 
         using var client = await factory.OpenAsUserAsync();
 
@@ -189,10 +131,10 @@ public class AuthApiTests : IClassFixture<WebApplicationFactory<Program>>
     [Fact]
     public async Task CreateUser_AsAdmin_ReturnsOkAndPersistsUser() // CHANGED: accurate name
     {
-        await using var factory = new CreationApiTests.ApiFactory();
+        await using var factory = new ApiTestFactory();
         using var client = await factory.OpenAsAdminAsync();
 
-        var credentials = await CreateTemporaryUserAsync(client, "temporary-test-user");
+        var credentials = await AuthTestHelpers.CreateTemporaryUserAsync(client, "temporary-test-user");
 
         // Verify the account was actually saved in the isolated database.
         using var scope = factory.Services.CreateScope();
@@ -213,10 +155,10 @@ public class AuthApiTests : IClassFixture<WebApplicationFactory<Program>>
     [Fact]
     public async Task SignIn_AsUserWithTemporaryPassword_ReturnsOk()
     {
-        await using var factory = new CreationApiTests.ApiFactory();
+        await using var factory = new ApiTestFactory();
         using var client = await factory.OpenAsAdminAsync();
 
-        var credentials = await CreateTemporaryUserAsync(client, "temporary-test-user"); 
+        var credentials = await AuthTestHelpers.CreateTemporaryUserAsync(client, "temporary-test-user");
 
         // Verify the account was actually saved in the isolated database.
         using var scope = factory.Services.CreateScope();
@@ -279,11 +221,11 @@ public class AuthApiTests : IClassFixture<WebApplicationFactory<Program>>
         //declare createdUser to be re-used
         string createdUser = "temporary-test-user";
         //Create new factory
-        await using var factory = new CreationApiTests.ApiFactory();
+        await using var factory = new ApiTestFactory();
         //Create client, opening with Admin permissions
         using var client = await factory.OpenAsAdminAsync();
         //Reusing CreateTemporaryUserAsync step
-        var credentials = await CreateTemporaryUserAsync(client, createdUser);
+        var credentials = await AuthTestHelpers.CreateTemporaryUserAsync(client, createdUser);
         //Verify account is actually saved in the isolated db
         using var scope = factory.Services.CreateScope();
         var users = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
@@ -308,7 +250,7 @@ public class AuthApiTests : IClassFixture<WebApplicationFactory<Program>>
         using var client2 = await factory.OpenAsync();
 
         // Reuse LoginRequest here
-        var loginRequest = await LoginRequestAsNewTempUser(client2, credentials.UserName,
+        var loginRequest = await AuthTestHelpers.LoginWithTemporaryPasswordAsync(client2, credentials.UserName,
         credentials.TemporaryPassword);
 
         //Get a CSRF token for client2
@@ -350,11 +292,11 @@ public class AuthApiTests : IClassFixture<WebApplicationFactory<Program>>
         //declare createdUser to be re-used
         string createdUser = TemporaryTestUserName;
         //Create new factory
-        await using var factory = new CreationApiTests.ApiFactory();
+        await using var factory = new ApiTestFactory();
         //Create client, opening with Admin permissions
         using var client = await factory.OpenAsAdminAsync();
         //Reusing CreateTemporaryUserAsync step
-        var credentials = await CreateTemporaryUserAsync(client, createdUser);
+        var credentials = await AuthTestHelpers.CreateTemporaryUserAsync(client, createdUser);
         //Verify account is actually saved in the isolated db
         using var scope = factory.Services.CreateScope();
         var users = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
@@ -379,7 +321,7 @@ public class AuthApiTests : IClassFixture<WebApplicationFactory<Program>>
         using var client2 = await factory.OpenAsync();
 
         // Reuse LoginRequest here
-        var loginRequest = await LoginRequestAsNewTempUser(client2, credentials.UserName,
+        var loginRequest = await AuthTestHelpers.LoginWithTemporaryPasswordAsync(client2, credentials.UserName,
         credentials.TemporaryPassword);
 
         //Get a CSRF token for client2
@@ -428,7 +370,7 @@ public class AuthApiTests : IClassFixture<WebApplicationFactory<Program>>
     public async Task Admin_ResetsUserPassword_ReturnsOK()
     {
     string createdUser = TemporaryTestUserName;
-    await using var factory = new CreationApiTests.ApiFactory();
+    await using var factory = new ApiTestFactory();
     using var client = await factory.OpenAsAdminAsync();
 
     // ACT - Admin Signed In
@@ -438,7 +380,7 @@ public class AuthApiTests : IClassFixture<WebApplicationFactory<Program>>
     Assert.Equal(HttpStatusCode.OK, adminSignedIn.StatusCode);
 
     // reuse component CreateTemporaryUserAsync
-    var credentials = await CreateTemporaryUserAsync(client, createdUser);
+    var credentials = await AuthTestHelpers.CreateTemporaryUserAsync(client, createdUser);
     //Verify account is actually saved in the isolated db
         using var scope = factory.Services.CreateScope();
         var users = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
@@ -491,7 +433,7 @@ public class AuthApiTests : IClassFixture<WebApplicationFactory<Program>>
     public async Task Admin_ResetsAdminPassword_ReturnsBadRequest()
         {
         string createdAdmin = "TemporaryTestAdmin";
-        await using var factory = new CreationApiTests.ApiFactory();
+        await using var factory = new ApiTestFactory();
         using var client = await factory.OpenAsAdminAsync();
 
         // ACT - Admin Sign in
@@ -501,7 +443,7 @@ public class AuthApiTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.Equal(HttpStatusCode.OK, adminSignedIn.StatusCode);
 
         //reuse component CreateTemporary
-        var credentials = await CreateTemporaryUserAsync(client, createdAdmin);
+        var credentials = await AuthTestHelpers.CreateTemporaryUserAsync(client, createdAdmin);
         //Verify account is actually saved in the isolated db
         using var scope = factory.Services.CreateScope();
         var users = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();

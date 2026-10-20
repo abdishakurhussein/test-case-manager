@@ -10,69 +10,18 @@ using TestCaseManager.Api.Contracts;
 using TestCaseManager.Api.Controllers;
 using TestCaseManager.Api.Data;
 using TestCaseManager.Api.Models;
+using TestCaseManager.Api.Tests.TestSupport;
 using Xunit;
 
 namespace TestCaseManager.Api.Tests;
 
 public class AttachmentApiTests
 {
-    private sealed class Factory : WebApplicationFactory<Program>
-    {
-        private readonly string _directory = Path.Combine(Path.GetTempPath(), "atcm-attachments-" + Guid.NewGuid().ToString("N"));
-        protected override void ConfigureWebHost(IWebHostBuilder builder)
-        {
-            builder.UseEnvironment("Development");
-            builder.UseSetting("Storage:Directory", _directory);
-        }
-
-        public async Task<HttpClient> OpenAsync(bool signIn)
-        {
-            var client = CreateClient();
-            using (var scope = Services.CreateScope())
-            {
-                await scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.MigrateAsync();
-                if (signIn)
-                {
-                    var users = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
-                    var result = await users.CreateAsync(new AppUser { UserName = "feature-test", MustChangePassword = false }, "TestPassword123!");
-                    Assert.True(result.Succeeded);
-                }
-            }
-            if (!signIn) return client;
-            using var csrf = await client.GetAsync("/api/auth/csrf");
-            Assert.Equal(HttpStatusCode.NoContent, csrf.StatusCode);
-            var cookie = csrf.Headers.GetValues("Set-Cookie").Single(value => value.StartsWith("XSRF-TOKEN=", StringComparison.Ordinal));
-            client.DefaultRequestHeaders.Add("X-XSRF-TOKEN", Uri.UnescapeDataString(cookie.Split(';')[0]["XSRF-TOKEN=".Length..]));
-            using var login = await client.PostAsJsonAsync("/api/auth/login", new { userName = "feature-test", password = "TestPassword123!" });
-            Assert.Equal(HttpStatusCode.OK, login.StatusCode);
-            // Signing in changes the principal; request a token for that principal.
-            using var signedInCsrf = await client.GetAsync("/api/auth/csrf");
-            Assert.Equal(HttpStatusCode.NoContent, signedInCsrf.StatusCode);
-            var signedInCookie = signedInCsrf.Headers.GetValues("Set-Cookie")
-                .Single(value => value.StartsWith("XSRF-TOKEN=", StringComparison.Ordinal));
-            client.DefaultRequestHeaders.Remove("X-XSRF-TOKEN");
-            client.DefaultRequestHeaders.Add("X-XSRF-TOKEN",
-                Uri.UnescapeDataString(signedInCookie.Split(';')[0]["XSRF-TOKEN=".Length..]));
-            return client;
-        }
-
-        public override async ValueTask DisposeAsync()
-        {
-            await base.DisposeAsync();
-            var full = Path.GetFullPath(_directory);
-            var tempRoot = Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar);
-            if (full.StartsWith(tempRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) &&
-                Path.GetFileName(full).StartsWith("atcm-attachments-", StringComparison.Ordinal) &&
-                Directory.Exists(full))
-                Directory.Delete(full, recursive: true);
-        }
-    }
-
     [Fact]
     public async Task ExcelAndAttachmentEndpoints_RequireLogin()
     {
-        await using var factory = new Factory();
-        using var client = await factory.OpenAsync(signIn: false);
+        await using var factory = new ApiTestFactory();
+        using var client = await factory.OpenAsync();
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/archive/excel")).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/projects/1/export")).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/attachments/1")).StatusCode);
@@ -82,8 +31,8 @@ public class AttachmentApiTests
     [Fact]
     public async Task SignedInUser_CanExportAndStoreWorkbookWithoutChangingResults()
     {
-        await using var factory = new Factory();
-        using var client = await factory.OpenAsync(signIn: true);
+        await using var factory = new ApiTestFactory();
+        using var client = await factory.OpenAsUserAsync();
         using var create = await client.PostAsJsonAsync("/api/projects", new { name = "Workbook project" });
         Assert.Equal(HttpStatusCode.Created, create.StatusCode);
         var project = (await create.Content.ReadFromJsonAsync<TestCaseManager.Api.Contracts.ProjectResponse>())!;
@@ -121,8 +70,8 @@ public class AttachmentApiTests
     [Fact]
     public async Task UploadedWorkbook_PreviewAndImportCreateDraftCasesWithoutRuns_AndSkipRepeat()
     {
-        await using var factory = new Factory();
-        using var client = await factory.OpenAsync(signIn: true);
+        await using var factory = new ApiTestFactory();
+        using var client = await factory.OpenAsUserAsync();
         var project = (await (await client.PostAsJsonAsync("/api/projects", new { name = "Import project" }))
             .Content.ReadFromJsonAsync<ProjectResponse>())!;
         var workbook = ExcelWorkbook.Create(new ExcelWorkbook.Sheet("Execution",
@@ -162,8 +111,8 @@ public class AttachmentApiTests
     [Fact]
     public async Task FailedRunStep_CanHoldImageEvidence()
     {
-        await using var factory = new Factory();
-        using var client = await factory.OpenAsync(signIn: true);
+        await using var factory = new ApiTestFactory();
+        using var client = await factory.OpenAsUserAsync();
         var project = (await (await client.PostAsJsonAsync("/api/projects", new { name = "Evidence project" }))
             .Content.ReadFromJsonAsync<ProjectResponse>())!;
         var module = (await (await client.PostAsJsonAsync("/api/modules", new { projectId = project.Id, name = "Login" }))
