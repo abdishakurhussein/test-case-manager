@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+// Legacy broad workflow: update its selectors and export expectations before enabling it.
+
 test('mobile navigation opens, follows a link, and closes', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 800 });
   await page.goto('/');

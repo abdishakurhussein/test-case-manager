@@ -6,17 +6,27 @@ import { of } from 'rxjs';
 import { HttpErrorResponse } from '@angular/common/http';
 import { errorMessage } from './api.service';
 import { ToastService } from './toast.service';
+import { AuthService } from './auth.service';
+
+const signedInUser = {
+  canUseWorkspace: () => true,
+  user: () => ({ userName: 'test-user', isAdmin: false, mustChangePassword: false }),
+};
 
 describe('App shell', () => {
   it('shows the local workspace and navigation', async () => {
     await TestBed.configureTestingModule({
       imports: [App],
-      providers: [provideRouter([]), { provide: ApiService, useValue: { projects: () => of([]) } }],
+      providers: [
+        provideRouter([]),
+        { provide: ApiService, useValue: { projects: () => of([]) } },
+        { provide: AuthService, useValue: signedInUser },
+      ],
     }).compileComponents();
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('ATCM');
-    expect(fixture.nativeElement.textContent).toContain('Local workspace');
+    expect(fixture.nativeElement.textContent).toContain('Your workspace');
     const navigation = fixture.nativeElement.querySelector('nav');
     expect(navigation.textContent.indexOf('Projects')).toBeLessThan(navigation.textContent.indexOf('Archive'));
 
@@ -38,7 +48,11 @@ describe('App shell', () => {
   it('shows and dismisses a success notification', async () => {
     await TestBed.configureTestingModule({
       imports: [App],
-      providers: [provideRouter([]), { provide: ApiService, useValue: { projects: () => of([]) } }],
+      providers: [
+        provideRouter([]),
+        { provide: ApiService, useValue: { projects: () => of([]) } },
+        { provide: AuthService, useValue: signedInUser },
+      ],
     }).compileComponents();
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();

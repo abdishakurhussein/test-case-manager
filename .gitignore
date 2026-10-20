@@ -490,3 +490,4 @@ $RECYCLE.BIN/
 /src/testcase-manager-web/.e2e-data/
 /src/testcase-manager-web/test-results/
 /src/testcase-manager-web/playwright-report/
+/src/testcase-manager-web/e2e/.auth/

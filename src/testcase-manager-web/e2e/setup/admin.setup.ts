@@ -1,10 +1,10 @@
 /// <reference types="node" />
 import {expect, test as setup} from '@playwright/test';
 
-// Setup Scenario 1: Authenticate as user
+// Create reusable signed-in admin browser state for the admin test project.
 setup('authenticate as admin', async ({ page }) => { 
     // Setup Step 1: Authenticate as admin
-    const username = process.env.ATCM_E2E_ADMIN;
+    const username = process.env.ATCM_E2E_ADMIN_USER ?? process.env.ATCM_E2E_ADMIN;
     const password = process.env.ATCM_E2E_ADMIN_PASSWORD;
     if (!username || !password) throw new Error ('Admin test credentials are missing.');
 
