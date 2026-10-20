@@ -29,4 +29,33 @@ export default defineConfig({
       timeout: 30000,
     },
   ],
+    projects: [
+    {
+      name: 'anonymous',
+      testDir: './e2e',
+      testMatch: 'auth.spec.ts',
+    },
+    {
+      name: 'admin-setup',
+      testDir: './e2e/setup',
+      testMatch: 'admin.setup.ts',
+    },
+    {
+      name: 'user-setup',
+      testDir: './e2e/setup',
+      testMatch: 'user.setup.ts',
+    },
+    {
+      name: 'admin',
+      testDir: './e2e/admin',
+      dependencies: ['admin-setup'],
+      use: { storageState: 'e2e/.auth/admin.json' },
+    },
+    {
+      name: 'user',
+      testDir: './e2e/user',
+      dependencies: ['user-setup'],
+      use: { storageState: 'e2e/.auth/user.json' },
+    },
+  ],
 });

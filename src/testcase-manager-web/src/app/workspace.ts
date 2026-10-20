@@ -3,7 +3,7 @@ import { DatePipe } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { combineLatest, firstValueFrom } from 'rxjs';
-import { ApiService, CaseSummary, Module, Project, ProjectOverview, StoredAttachment, errorMessage } from './api.service';
+import { ApiService, CaseSummary, Module, Project, ProjectOverview, StoredAttachment, WorkbookImportPreview, errorMessage } from './api.service';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ProjectNavigationService } from './project-navigation.service';
 import { casePath, idFromSegment, projectPath } from './paths';
@@ -50,6 +50,9 @@ export class Workspace implements OnInit {
   readonly workbookError = signal('');
   readonly uploadingWorkbook = signal(false);
   readonly deletingWorkbookId = signal<number | null>(null);
+  readonly previewingWorkbookId = signal<number | null>(null);
+  readonly importingWorkbookId = signal<number | null>(null);
+  readonly importPreview = signal<{ workbook: StoredAttachment; value: WorkbookImportPreview } | null>(null);
   readonly selectedProjectId = signal<number | null>(null);
   readonly selectedModuleId = signal<number | null>(null);
   readonly selectedProject = computed(() =>
@@ -142,6 +145,7 @@ export class Workspace implements OnInit {
     this.totalCases.set(0);
     this.projectOverview.set(null);
     this.workbooks.set([]);
+    this.importPreview.set(null);
     try {
       await this.projectNavigation.refresh();
       if (request !== this.routeRequest) return;
@@ -228,11 +232,54 @@ export class Workspace implements OnInit {
     try {
       await firstValueFrom(this.api.deleteWorkbook(projectId, workbook.id));
       this.workbooks.update(items => items.filter(item => item.id !== workbook.id));
+      if (this.importPreview()?.workbook.id === workbook.id) this.importPreview.set(null);
       this.toast.show(`Workbook “${workbook.fileName}” deleted.`);
     } catch (error) {
       this.workbookError.set(errorMessage(error));
     } finally {
       this.deletingWorkbookId.set(null);
+    }
+  }
+
+  async previewWorkbook(workbook: StoredAttachment): Promise<void> {
+    const projectId = this.selectedProjectId();
+    if (projectId === null || this.previewingWorkbookId() !== null) return;
+    this.previewingWorkbookId.set(workbook.id);
+    this.importPreview.set(null);
+    this.workbookError.set('');
+    try {
+      const value = await firstValueFrom(this.api.previewWorkbookImport(projectId, workbook.id));
+      if (this.selectedProjectId() === projectId) this.importPreview.set({ workbook, value });
+    } catch (error) {
+      this.workbookError.set(errorMessage(error));
+    } finally {
+      this.previewingWorkbookId.set(null);
+    }
+  }
+
+  async importWorkbook(): Promise<void> {
+    const projectId = this.selectedProjectId();
+    const preview = this.importPreview();
+    if (projectId === null || !preview || !preview.value.toCreate || this.importingWorkbookId() !== null) return;
+    if (!await this.confirmDialog.confirm({
+      title: 'Create test cases from workbook?',
+      message: `Create up to ${preview.value.toCreate} Draft test cases? Existing cases will be skipped. Offline outcomes and notes will not become saved runs.`,
+      confirmLabel: 'Create test cases',
+    })) return;
+    this.importingWorkbookId.set(preview.workbook.id);
+    this.workbookError.set('');
+    try {
+      const result = await firstValueFrom(this.api.importWorkbook(projectId, preview.workbook.id));
+      await this.selectProject(projectId);
+      await this.loadOverview(projectId);
+      this.page.set(1);
+      await this.loadCases();
+      this.importPreview.set(null);
+      this.toast.show(`Created ${result.created} Draft test case(s); skipped ${result.skipped} existing case(s).`);
+    } catch (error) {
+      this.workbookError.set(errorMessage(error));
+    } finally {
+      this.importingWorkbookId.set(null);
     }
   }
 

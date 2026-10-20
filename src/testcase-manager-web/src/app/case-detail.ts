@@ -47,6 +47,7 @@ export class CaseDetail {
   readonly canReplicate = signal<AnswerChoice>(null);
   readonly onlyUserAffected = signal<AnswerChoice>(null);
   readonly failureError = signal('');
+  readonly pendingEvidence = signal<Record<number, File[]>>({});
   @ViewChild('failureDialog') failureDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('addActionDialog') addActionDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('editDialog') editDialog!: ElementRef<HTMLDialogElement>;
@@ -149,6 +150,7 @@ export class CaseDetail {
       )
       .subscribe(item => {
         this.item.set(item);
+        this.pendingEvidence.set({});
         this.loading.set(false);
         this.runs.set([]);
         this.evidence.set([]);
@@ -201,7 +203,7 @@ export class CaseDetail {
       fileInput.value = '';
       captionInput.value = '';
       await this.loadEvidence(item.id);
-      this.toast.show('Image evidence saved with this failed step.');
+      this.toast.show('Evidence saved with this failed step.');
     } catch (error) {
       this.evidenceError.set(errorMessage(error));
     } finally {
@@ -213,6 +215,7 @@ export class CaseDetail {
     if (this.item()?.status !== 'Ready' || this.runsLoading()) return;
     this.decisions.set({});
     this.failureDetails.set({});
+    this.pendingEvidence.set({});
     this.runError.set('');
     this.newRunStarted.set(true);
   }
@@ -310,6 +313,7 @@ export class CaseDetail {
       this.item.set(updated);
       this.decisions.set({});
       this.failureDetails.set({});
+      this.pendingEvidence.set({});
       this.editDialog.nativeElement.close();
       this.editValue.set(null);
       this.toast.show('Test case updated. Saved run history is unchanged; unsaved run selections were cleared.');
@@ -331,6 +335,11 @@ export class CaseDetail {
     this.failureDetails.update(current => {
       const next = { ...current };
       if (outcome !== 'Failed') delete next[stepId];
+      return next;
+    });
+    if (outcome !== 'Failed') this.pendingEvidence.update(current => {
+      const next = { ...current };
+      delete next[stepId];
       return next;
     });
     this.runError.set('');
@@ -422,11 +431,26 @@ export class CaseDetail {
     this.closeFailure();
   }
 
+  chooseFailureEvidence(input: HTMLInputElement): void {
+    const stepId = this.failureStepId();
+    if (stepId === null) return;
+    const files = Array.from(input.files ?? []);
+    if (files.length > 5 || files.some(file => file.size > 5 * 1024 * 1024 ||
+      !/\.(png|jpe?g|webp|pdf|txt|log)$/i.test(file.name))) {
+      this.failureError.set('Choose up to five PNG, JPEG, WebP, PDF, TXT or LOG files, 5 MB each.');
+      input.value = '';
+      return;
+    }
+    this.pendingEvidence.update(current => ({ ...current, [stepId]: files }));
+    this.failureError.set('');
+  }
+
   async saveRun(): Promise<void> {
     const item = this.item();
     if (!item || !this.canSaveRun()) return;
     this.savingRun.set(true);
     this.runError.set('');
+    this.evidenceError.set('');
     try {
       const steps: ManualStepDecision[] = item.steps.map(step => ({
         stepId: step.id,
@@ -435,10 +459,24 @@ export class CaseDetail {
       }));
       const run = await firstValueFrom(this.api.saveRun(item.id, steps));
       this.runs.update(existing => [run, ...existing]);
+      const pending = this.pendingEvidence();
       this.decisions.set({});
       this.failureDetails.set({});
+      this.pendingEvidence.set({});
       this.newRunStarted.set(false);
-      this.toast.show(`Run saved: ${run.result}.`);
+      const failures: string[] = [];
+      for (const savedStep of run.steps) {
+        for (const file of pending[savedStep.originalStepId] ?? []) {
+          try {
+            await firstValueFrom(this.api.uploadEvidence(item.id, run.id, savedStep.id, file, ''));
+          } catch (error) {
+            failures.push(`${file.name}: ${errorMessage(error)}`);
+          }
+        }
+      }
+      await this.loadEvidence(item.id);
+      if (failures.length) this.evidenceError.set(`Run saved, but some evidence could not be attached. Add it under Previous runs. ${failures.join(' ')}`);
+      else this.toast.show(`Run saved: ${run.result}.`);
     } catch (error) {
       this.runError.set(errorMessage(error));
     } finally {
@@ -468,6 +506,7 @@ export class CaseDetail {
       this.item.set(await firstValueFrom(this.api.case(item.id)));
       this.decisions.set({});
       this.failureDetails.set({});
+      this.pendingEvidence.set({});
       this.toast.show('Test step removed. Any unsaved run selections were cleared.');
     } catch (error) {
       this.runError.set(errorMessage(error));
@@ -492,6 +531,7 @@ export class CaseDetail {
       this.item.set(await firstValueFrom(this.api.case(current.id)));
       this.decisions.set({});
       this.failureDetails.set({});
+      this.pendingEvidence.set({});
       this.newRunStarted.set(false);
       this.toast.show(`Test case marked ${status.toLowerCase()}.`);
     } catch (error) {

@@ -28,3 +28,13 @@ test ('Login form is submitted with invalid credentials', async ({ page }) => {
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByRole('alert')).toHaveText('Invalid username or password.');
 });
+
+// Login & Permissions Scenario 1: Signed out visitor opens /admin/users and is redirected to login page
+test('Authenticated user signs out and /admin/users redirects to login page', async ({ page }) => {
+  await page.goto('/admin/users');
+  await expect(page).toHaveURL('http://localhost:4301/login'); // Login UI guard against unauthenticated access
+
+  const response = await page.request.get('/api/admin/users');
+  expect(response.status()).toBe(401); // API authorization guard against unauthenticated access
+});
+

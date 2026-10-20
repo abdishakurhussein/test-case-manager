@@ -16,11 +16,13 @@ using Microsoft.AspNetCore.Mvc;
 using Xunit.Abstractions;
 using Microsoft.AspNetCore.Http.HttpResults;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography.X509Certificates;
 
 namespace TestCaseManager.Api.Tests;
 
 public class AuthApiTests : IClassFixture<WebApplicationFactory<Program>>
 {
+    private const string TemporaryTestUserName = "temporary-test-user";
     private readonly WebApplicationFactory<Program> _factory;
 
     //HELPERS
@@ -31,6 +33,10 @@ public class AuthApiTests : IClassFixture<WebApplicationFactory<Program>>
         _factory = factory;
         _output = output;
     }
+
+    
+
+    
     
     private static async Task<TemporaryCredentialResponse> CreateTemporaryUserAsync(HttpClient client, string userName)
     {
@@ -342,7 +348,7 @@ public class AuthApiTests : IClassFixture<WebApplicationFactory<Program>>
     public async Task Password_ChangeValidation_ReturnsOK()
     {
         //declare createdUser to be re-used
-        string createdUser = "temporary-test-user";
+        string createdUser = TemporaryTestUserName;
         //Create new factory
         await using var factory = new CreationApiTests.ApiFactory();
         //Create client, opening with Admin permissions
@@ -421,6 +427,7 @@ public class AuthApiTests : IClassFixture<WebApplicationFactory<Program>>
     [Fact]
     public async Task Admin_ResetsUserPassword_ReturnsOK()
     {
+    string createdUser = TemporaryTestUserName;
     await using var factory = new CreationApiTests.ApiFactory();
     using var client = await factory.OpenAsAdminAsync();
 
@@ -430,17 +437,46 @@ public class AuthApiTests : IClassFixture<WebApplicationFactory<Program>>
     //ASSERT - Confirm we are logged as an admin
     Assert.Equal(HttpStatusCode.OK, adminSignedIn.StatusCode);
 
-    // NEED TO CREATE NEW USER FIRST BEFORE CONTINUING WITH TEST BECAUSE NEW USER IS WHAT WE'LL CHANGE THE PASSWORD FOR AND WE DIDN'T ESTABLISH THAT YET, reuse component CreateTemporaryUserAsync
+    // reuse component CreateTemporaryUserAsync
+    var credentials = await CreateTemporaryUserAsync(client, createdUser);
+    //Verify account is actually saved in the isolated db
+        using var scope = factory.Services.CreateScope();
+        var users = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
+        var savedUser = await users.FindByNameAsync(createdUser);
 
+
+    _output.WriteLine($"13.1. Admin created temporary user {savedUser}");
+    //Assert here that the user is not null, the user exists, the role is user, and the user must change their password
+        Assert.NotNull(savedUser);
+        Assert.Equal(credentials.UserId, savedUser.Id);
+        Assert.True(await users.IsInRoleAsync(savedUser, "User"));
+        Assert.True(savedUser.MustChangePassword);
+
+    //Verify the returned password belongs to this account:
+
+        Assert.True(await users.CheckPasswordAsync(savedUser, credentials.TemporaryPassword));
+
+        _output.WriteLine($"12.2. Verify the returned temporary password belongs to this account: {savedUser}");   
     //Then navigate to manage user (api/admin/user), but we also need to confirm from the response body the json properties as we'll validate against that later in the test
-    
-    var adminManageUser = await client.GetAsync("/api/admin/users");
 
-    Assert.Equal(HttpStatusCode.OK, adminManageUser.StatusCode);
+    //ACT
+    var adminResetsUserPass = await client.PostAsync($"/api/admin/users/{credentials.UserId}/reset-password",content: null);
+    //ASSERT
+    Assert.Equal(HttpStatusCode.OK, adminResetsUserPass.StatusCode);
+    //DESERIALIZE
+    var resettedUser = await adminResetsUserPass.Content.ReadFromJsonAsync<TemporaryCredentialResponse>();
 
-    var adminManageUserRead = await adminManageUser.Content.ReadFromJsonAsync<JsonElement>();
+    Assert.NotNull(resettedUser);
+    //ID confirm that it's same
+    Assert.Equal(credentials.UserId, resettedUser.UserId);
+    //userName confirm that it's same
+    Assert.Equal(credentials.UserName, resettedUser.UserName);
+    //mustChangePassword is set to true, and isn't null or whitespace
+    Assert.False(string.IsNullOrWhiteSpace(resettedUser.TemporaryPassword));
+    //Temp passwords should now be different to before
+    Assert.NotEqual(credentials.TemporaryPassword, resettedUser.TemporaryPassword);
+    }
 
-    Assert.Equal(false, adminManageUserRead.GetProperty("mustChangePassword")[1].GetBoolean());
     
 
 
@@ -451,10 +487,38 @@ public class AuthApiTests : IClassFixture<WebApplicationFactory<Program>>
     //lastly check (api/admin/users) and assert that user mustChangePassword is true
 
     //Login & Permissions Scenario 14 - Admin attempts to reset another admin
+    [Fact]
+    public async Task Admin_ResetsAdminPassword_ReturnsBadRequest()
+        {
+        string createdAdmin = "TemporaryTestAdmin";
+        await using var factory = new CreationApiTests.ApiFactory();
+        using var client = await factory.OpenAsAdminAsync();
+
+        // ACT - Admin Sign in
+        var adminSignedIn = await client.GetAsync("/api/auth/me");        
+
+        //Assert - confirmed that we are logged in as admin
+        Assert.Equal(HttpStatusCode.OK, adminSignedIn.StatusCode);
+
+        //reuse component CreateTemporary
+        var credentials = await CreateTemporaryUserAsync(client, createdAdmin);
+        //Verify account is actually saved in the isolated db
+        using var scope = factory.Services.CreateScope();
+        var users = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
+        var savedAdmin = await users.FindByNameAsync(createdAdmin);
+
+        Assert.NotNull(savedAdmin);
+
+        var assignResult = await users.AddToRoleAsync(savedAdmin, "Admin");
+        Assert.True(assignResult.Succeeded);
+        Assert.True(await users.IsInRoleAsync(savedAdmin, "Admin"));
+
+
+        
 
     //Login & Permissions Scenario 15 - Authenticated write without CSRF token
 
     //Login & Permissions Scenario 16 - Repeated wrong passwords
-
-    }
+        }
+    
 }

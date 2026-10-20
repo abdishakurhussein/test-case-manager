@@ -35,13 +35,13 @@ public sealed class ExcelExportController(AppDbContext db) : ControllerBase
             new string?[] { "Using this workbook", "Use the yellow cells for offline notes. Enter official results and evidence in ATCM." },
             new string?[] { "Case IDs", "Keep case and step IDs intact so colleagues can find the matching case in ATCM." }
         });
-        var execution = new ExcelWorkbook.Sheet("Execution", ["Case ID", "Project", "Module", "Case title", "Priority", "Status", "Step ID", "Step", "Action", "Expected result", "Outcome", "Actual result / notes", "Tester", "Tested at"],
+        var execution = new ExcelWorkbook.Sheet("Execution", ["Case ID", "Project", "Module", "Case title", "Priority", "Status", "Description", "Preconditions", "Step ID", "Step", "Action", "Expected result", "Outcome", "Actual result / notes", "Tester", "Tested at"],
             cases.SelectMany(item => item.Steps.OrderBy(step => step.Position).Select(step => new string?[]
             {
                 $"TC-{item.Id:000}", project.Name, item.Module.Name, item.Title, item.Priority.ToString(),
-                item.Status.ToString(), step.Id.ToString(), step.Position.ToString(), step.Action, step.ExpectedResult,
+                item.Status.ToString(), item.Description, item.Preconditions, step.Id.ToString(), step.Position.ToString(), step.Action, step.ExpectedResult,
                 "Not run", "", "", ""
-            })), [11, 12, 13, 14], 11);
+            })), [13, 14, 15, 16], 13);
         return File(ExcelWorkbook.Create(execution, instructions), Xlsx,
             $"atcm-project-{projectId}-{DateTime.UtcNow:yyyyMMdd}.xlsx");
     }
