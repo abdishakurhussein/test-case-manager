@@ -90,7 +90,7 @@
       <div class="section-heading">
         <div>
           <h2 id="workbooks-heading">Shared Excel workbooks</h2>
-          <p class="muted">Keep completed offline copies with this project. Uploading a workbook does not change official ATCM results.</p>
+          <p class="muted">Keep offline copies with this project, or preview one to create Draft test cases. Offline results never overwrite saved ATCM runs.</p>
         </div>
       </div>
       <div class="attachment-form">
@@ -112,6 +112,10 @@
           @for (workbook of workbooks(); track workbook.id) {
             <li><a [href]="'/api/attachments/' + workbook.id">{{ workbook.fileName }}</a>
               <span class="muted">{{ workbook.caption || 'No note' }} · {{ workbook.uploadedBy }} · {{ workbook.uploadedAt | date: 'medium' }}</span>
+              <button type="button" [disabled]="previewingWorkbookId() !== null || importingWorkbookId() !== null"
+                (click)="previewWorkbook(workbook)">
+                {{ previewingWorkbookId() === workbook.id ? 'Checking…' : 'Preview import' }}
+              </button>
               @if (auth.user()?.isAdmin || auth.user()?.userName?.toLowerCase() === workbook.uploadedBy.toLowerCase()) {
                 <button class="danger workbook-delete" type="button" [disabled]="deletingWorkbookId() !== null"
                   [attr.aria-label]="'Delete workbook ' + workbook.fileName" (click)="deleteWorkbook(workbook)">
@@ -121,6 +125,27 @@
             </li>
           }
         </ul>
+      }
+      @if (importPreview(); as preview) {
+        <div class="workbook-import-preview" aria-live="polite">
+          <h3>Import preview: {{ preview.workbook.fileName }}</h3>
+          <p>{{ preview.value.toCreate }} new case(s) · {{ preview.value.skipped }} existing case(s) skipped.
+            @if (preview.value.newModules.length) { New modules: {{ preview.value.newModules.join(', ') }}. }
+          </p>
+          <p class="muted">Cases will start in Draft. Spreadsheet outcomes, notes and attachments are not imported as runs.</p>
+          <ul>
+            @for (testCase of preview.value.cases; track $index) {
+              <li>{{ testCase.module }} / {{ testCase.title }} · {{ testCase.steps }} step(s) · {{ testCase.exists ? 'Already exists' : 'Will create' }}</li>
+            }
+          </ul>
+          <div class="form-actions">
+            <button type="button" (click)="importPreview.set(null)">Cancel</button>
+            <button type="button" class="primary" [disabled]="!preview.value.toCreate || importingWorkbookId() !== null"
+              (click)="importWorkbook()">
+              {{ importingWorkbookId() === preview.workbook.id ? 'Creating…' : 'Create ' + preview.value.toCreate + ' test case(s)' }}
+            </button>
+          </div>
+        </div>
       }
     </section>
     <section class="panel" aria-labelledby="modules-heading">

@@ -713,6 +713,10 @@ select.ng-invalid.ng-touched {
 .attachment-list { list-style: none; margin: 0; padding: 0; }
 .attachment-list li { display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 0.65rem 0; border-top: 1px solid #dce5f1; }
 .attachment-list .workbook-delete { margin-left: auto; }
+.workbook-import-preview { margin-top: 1rem; padding: 1rem; border: 1px solid #cbd9ee; border-radius: 0.7rem; background: #f5f8fe; }
+.workbook-import-preview h3 { margin: 0 0 0.5rem; }
+.workbook-import-preview ul { max-height: 13rem; overflow: auto; margin: 0.75rem 0; padding-left: 1.3rem; }
+.workbook-import-preview li { margin: 0.3rem 0; }
 .evidence-gallery { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.75rem; }
 .evidence-gallery figure { margin: 0; width: 12rem; }
 .evidence-gallery img { display: block; width: 100%; height: 7rem; object-fit: cover; border-radius: 0.5rem; border: 1px solid #dce5f1; }

@@ -119,6 +119,47 @@ public class AttachmentApiTests
     }
 
     [Fact]
+    public async Task UploadedWorkbook_PreviewAndImportCreateDraftCasesWithoutRuns_AndSkipRepeat()
+    {
+        await using var factory = new Factory();
+        using var client = await factory.OpenAsync(signIn: true);
+        var project = (await (await client.PostAsJsonAsync("/api/projects", new { name = "Import project" }))
+            .Content.ReadFromJsonAsync<ProjectResponse>())!;
+        var workbook = ExcelWorkbook.Create(new ExcelWorkbook.Sheet("Execution",
+            ["Case ID", "Module", "Case title", "Priority", "Description", "Preconditions", "Action", "Expected result", "Outcome"],
+            [
+                new string?[] { "TC-999", "Accounts", "Sign in", "Critical", "Login check", "User exists", "Enter user", "User accepted", "Failed" },
+                new string?[] { "TC-999", "Accounts", "Sign in", "Critical", "Login check", "User exists", "Submit", "Home page", "Passed" }
+            ]));
+        using var form = new MultipartFormDataContent();
+        form.Add(new ByteArrayContent(workbook), "file", "cases.xlsx");
+        using var upload = await client.PostAsync($"/api/projects/{project.Id}/workbooks", form);
+        Assert.Equal(HttpStatusCode.Created, upload.StatusCode);
+        var attachment = (await upload.Content.ReadFromJsonAsync<AttachmentsController.AttachmentSummary>())!;
+        var url = $"/api/projects/{project.Id}/workbooks/{attachment.Id}";
+        var preview = (await (await client.GetAsync(url + "/import-preview"))
+            .Content.ReadFromJsonAsync<WorkbookImportController.ImportPreview>())!;
+        Assert.Equal(1, preview.ToCreate);
+        Assert.Equal("Accounts", Assert.Single(preview.NewModules));
+
+        using var imported = await client.PostAsJsonAsync(url + "/import", new { });
+        Assert.Equal(HttpStatusCode.OK, imported.StatusCode);
+        var result = (await imported.Content.ReadFromJsonAsync<WorkbookImportController.ImportResult>())!;
+        Assert.Equal(1, result.Created);
+        Assert.Equal(1, result.ModulesCreated);
+        using var repeat = await client.PostAsJsonAsync(url + "/import", new { });
+        Assert.Equal(0, (await repeat.Content.ReadFromJsonAsync<WorkbookImportController.ImportResult>())!.Created);
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var testCase = await db.TestCases.Include(item => item.Steps).SingleAsync();
+        Assert.Equal(TestCaseStatus.Draft, testCase.Status);
+        Assert.Equal(TestPriority.Critical, testCase.Priority);
+        Assert.Equal("Login check", testCase.Description);
+        Assert.Equal(2, testCase.Steps.Count);
+        Assert.Equal(0, await db.ManualRuns.CountAsync());
+    }
+
+    [Fact]
     public async Task FailedRunStep_CanHoldImageEvidence()
     {
         await using var factory = new Factory();
@@ -149,11 +190,21 @@ public class AttachmentApiTests
         using var upload = await client.PostAsync(
             $"/api/testcases/{testCase.Id}/runs/{run.Id}/steps/{run.Steps[0].Id}/evidence", form);
         Assert.Equal(HttpStatusCode.Created, upload.StatusCode);
+        using var documentForm = new MultipartFormDataContent();
+        documentForm.Add(new ByteArrayContent("%PDF-1.4\nEvidence\n%%EOF"u8.ToArray()), "file", "failure.pdf");
+        using var documentUpload = await client.PostAsync(
+            $"/api/testcases/{testCase.Id}/runs/{run.Id}/steps/{run.Steps[0].Id}/evidence", documentForm);
+        Assert.Equal(HttpStatusCode.Created, documentUpload.StatusCode);
+        using var rejectedForm = new MultipartFormDataContent();
+        rejectedForm.Add(new ByteArrayContent(png), "file", "pretend.pdf");
+        using var rejected = await client.PostAsync(
+            $"/api/testcases/{testCase.Id}/runs/{run.Id}/steps/{run.Steps[0].Id}/evidence", rejectedForm);
+        Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
         using var evidence = await client.GetAsync($"/api/testcases/{testCase.Id}/evidence");
         Assert.Equal(HttpStatusCode.OK, evidence.StatusCode);
         Assert.Contains("Error on login", await evidence.Content.ReadAsStringAsync());
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        Assert.Equal(1, await db.StoredAttachments.CountAsync(item => item.Kind == "Evidence"));
+        Assert.Equal(2, await db.StoredAttachments.CountAsync(item => item.Kind == "Evidence"));
     }
 }

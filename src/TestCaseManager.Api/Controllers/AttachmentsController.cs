@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -12,7 +13,7 @@ namespace TestCaseManager.Api.Controllers;
 public sealed class AttachmentsController(AppDbContext db) : ControllerBase
 {
     private const int WorkbookLimit = 10 * 1024 * 1024;
-    private const int ImageLimit = 5 * 1024 * 1024;
+    private const int EvidenceLimit = 5 * 1024 * 1024;
     private const string Xlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
     [HttpGet("api/projects/{projectId:int}/workbooks")]
@@ -69,7 +70,7 @@ public sealed class AttachmentsController(AppDbContext db) : ControllerBase
                 step.Id == item.ManualStepResultId && step.ManualRunId == runId))
             .OrderBy(item => item.UploadedAt)
             .Select(item => new EvidenceSummary(item.Id, item.ManualStepResultId!.Value, item.FileName,
-                item.Caption, item.UploadedBy, item.UploadedAt, item.Data.Length))
+                item.Caption, item.UploadedBy, item.UploadedAt, item.Data.Length, item.ContentType))
             .ToListAsync(token);
         return Ok(files);
     }
@@ -83,13 +84,13 @@ public sealed class AttachmentsController(AppDbContext db) : ControllerBase
                 step.Id == item.ManualStepResultId && step.ManualRun.TestCaseId == caseId))
             .OrderBy(item => item.UploadedAt)
             .Select(item => new EvidenceSummary(item.Id, item.ManualStepResultId!.Value, item.FileName,
-                item.Caption, item.UploadedBy, item.UploadedAt, item.Data.Length))
+                item.Caption, item.UploadedBy, item.UploadedAt, item.Data.Length, item.ContentType))
             .ToListAsync(token);
         return Ok(files);
     }
 
     [HttpPost("api/testcases/{caseId:int}/runs/{runId:int}/steps/{stepResultId:int}/evidence")]
-    [RequestSizeLimit(ImageLimit + 1024 * 1024)]
+    [RequestSizeLimit(EvidenceLimit + 1024 * 1024)]
     public async Task<IActionResult> UploadEvidence(int caseId, int runId, int stepResultId,
         IFormFile? file, [FromForm] string? caption, CancellationToken token)
     {
@@ -97,19 +98,19 @@ public sealed class AttachmentsController(AppDbContext db) : ControllerBase
             item.Id == stepResultId && item.ManualRunId == runId && item.ManualRun.TestCaseId == caseId, token);
         if (step is null) return NotFound();
         if (step.Outcome != "Failed") return Conflict(new ProblemDetails { Detail = "Evidence can be added to failed steps only." });
-        if (file is null || file.Length == 0 || file.Length > ImageLimit)
-            return BadRequest(new ProblemDetails { Detail = "Choose an image up to 5 MB." });
+        if (file is null || file.Length == 0 || file.Length > EvidenceLimit)
+            return BadRequest(new ProblemDetails { Detail = "Choose a screenshot, PDF, or text file up to 5 MB." });
         if (caption?.Length > 300) return BadRequest(new ProblemDetails { Detail = "Caption must be 300 characters or fewer." });
         var bytes = await Read(file, token);
-        var contentType = ImageType(bytes);
-        if (contentType is null) return BadRequest(new ProblemDetails { Detail = "Only PNG, JPEG, and WebP images are accepted." });
+        var contentType = EvidenceType(file.FileName, bytes);
+        if (contentType is null) return BadRequest(new ProblemDetails { Detail = "Only PNG, JPEG, WebP, PDF, TXT, and LOG files are accepted." });
         var attachment = NewAttachment(file, bytes, "Evidence", contentType, caption);
         attachment.ManualStepResultId = stepResultId;
         db.StoredAttachments.Add(attachment);
         await db.SaveChangesAsync(token);
         return Created($"/api/attachments/{attachment.Id}",
             new EvidenceSummary(attachment.Id, stepResultId, attachment.FileName, attachment.Caption,
-                attachment.UploadedBy, attachment.UploadedAt, attachment.Data.Length));
+                attachment.UploadedBy, attachment.UploadedAt, attachment.Data.Length, attachment.ContentType));
     }
 
     [HttpGet("api/attachments/{id:int}")]
@@ -119,7 +120,7 @@ public sealed class AttachmentsController(AppDbContext db) : ControllerBase
         if (attachment is null) return NotFound();
         Response.Headers["X-Content-Type-Options"] = "nosniff";
         Response.Headers["Cache-Control"] = "private, no-store";
-        return attachment.Kind == "Evidence"
+        return attachment.Kind == "Evidence" && attachment.ContentType.StartsWith("image/", StringComparison.Ordinal)
             ? File(attachment.Data, attachment.ContentType)
             : File(attachment.Data, attachment.ContentType, attachment.FileName);
     }
@@ -162,6 +163,27 @@ public sealed class AttachmentsController(AppDbContext db) : ControllerBase
         return null;
     }
 
+    private static string? EvidenceType(string name, byte[] bytes)
+    {
+        var extension = Path.GetExtension(name).ToLowerInvariant();
+        var image = ImageType(bytes);
+        if (extension is ".png" && image == "image/png" ||
+            extension is ".jpg" or ".jpeg" && image == "image/jpeg" ||
+            extension is ".webp" && image == "image/webp") return image;
+        if (extension == ".pdf" && bytes.AsSpan().StartsWith("%PDF-"u8)) return "application/pdf";
+        if (extension is ".txt" or ".log")
+        {
+            try
+            {
+                var content = new UTF8Encoding(false, true).GetString(bytes);
+                if (!content.Any(character => character == '\0' || character < ' ' && character is not '\r' and not '\n' and not '\t'))
+                    return "text/plain";
+            }
+            catch (DecoderFallbackException) { }
+        }
+        return null;
+    }
+
     public sealed record AttachmentSummary(int Id, string FileName, string Caption, string UploadedBy, DateTime UploadedAt, int Size);
-    public sealed record EvidenceSummary(int Id, int StepResultId, string FileName, string Caption, string UploadedBy, DateTime UploadedAt, int Size);
+    public sealed record EvidenceSummary(int Id, int StepResultId, string FileName, string Caption, string UploadedBy, DateTime UploadedAt, int Size, string ContentType);
 }

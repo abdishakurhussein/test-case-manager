@@ -181,18 +181,23 @@
                       @for (photo of evidenceForStep(step.id); track photo.id) {
                         <figure>
                           <a [href]="'/api/attachments/' + photo.id" target="_blank" rel="noopener" [attr.aria-label]="'Open evidence ' + photo.fileName">
-                            <img [src]="'/api/attachments/' + photo.id" [alt]="photo.caption || photo.fileName" loading="lazy" />
+                            @if (photo.contentType?.startsWith('image/')) {
+                              <img [src]="'/api/attachments/' + photo.id" [alt]="photo.caption || photo.fileName" loading="lazy" />
+                            } @else {
+                              {{ photo.fileName }} ↗
+                            }
                           </a>
                           <figcaption>{{ photo.caption || photo.fileName }} · {{ photo.uploadedBy }}</figcaption>
                         </figure>
                       }
                     </div>
+                    <p class="muted">Add a screenshot or supporting file that shows what happened during this failed step.</p>
                     <div class="attachment-form">
-                      <label>Attach image evidence
-                        <input #evidenceFile type="file" accept="image/png,image/jpeg,image/webp" />
+                      <label>Evidence file
+                        <input #evidenceFile type="file" accept=".png,.jpg,.jpeg,.webp,.pdf,.txt,.log" />
                       </label>
                       <label>Caption (optional)
-                        <input #evidenceCaption type="text" maxlength="300" placeholder="What does the image show?" />
+                        <input #evidenceCaption type="text" maxlength="300" placeholder="What does the file show?" />
                       </label>
                       <button type="button" [disabled]="uploadingEvidenceId() !== null"
                         (click)="uploadEvidence(run.id, step.id, evidenceFile, evidenceCaption)">
@@ -252,6 +257,14 @@
     <label><input type="radio" name="onlyUserAffected" [checked]="onlyUserAffected() === 'No'" (change)="onlyUserAffected.set('No')" /> No</label>
     <label><input type="radio" name="onlyUserAffected" [checked]="onlyUserAffected() === 'Unknown'" (change)="onlyUserAffected.set('Unknown')" /> Unknown</label>
   </fieldset>
+  <p class="muted">Please attach screenshots or supporting files that show the failed outcome. You can also add them after saving the run.</p>
+  <label>Evidence files (optional, up to five; 5 MB each)
+    <input type="file" multiple accept=".png,.jpg,.jpeg,.webp,.pdf,.txt,.log"
+      (change)="chooseFailureEvidence($any($event.target))" />
+  </label>
+  @if (failureStepId() !== null && pendingEvidence()[failureStepId()!]?.length) {
+    <p class="muted">{{ pendingEvidence()[failureStepId()!].length }} file(s) selected. They will upload when you save the run.</p>
+  }
   @if (failureError()) { <p class="error" role="alert">{{ failureError() }}</p> }
   <div class="form-actions">
     <button type="button" (click)="closeFailure()">Cancel</button>

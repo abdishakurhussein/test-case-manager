@@ -125,6 +125,20 @@ export interface StoredAttachment {
   uploadedAt: string;
   size: number;
   stepResultId?: number;
+  contentType?: string;
+}
+
+export interface WorkbookImportPreview {
+  toCreate: number;
+  skipped: number;
+  newModules: string[];
+  cases: { module: string; title: string; steps: number; exists: boolean }[];
+}
+
+export interface WorkbookImportResult {
+  created: number;
+  skipped: number;
+  modulesCreated: number;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -207,6 +221,14 @@ export class ApiService {
 
   deleteWorkbook(projectId: number, workbookId: number) {
     return this.http.delete<void>(`/api/projects/${projectId}/workbooks/${workbookId}`);
+  }
+
+  previewWorkbookImport(projectId: number, workbookId: number) {
+    return this.http.get<WorkbookImportPreview>(`/api/projects/${projectId}/workbooks/${workbookId}/import-preview`);
+  }
+
+  importWorkbook(projectId: number, workbookId: number) {
+    return this.http.post<WorkbookImportResult>(`/api/projects/${projectId}/workbooks/${workbookId}/import`, {});
   }
 
   evidence(caseId: number, runId: number) {
